@@ -1,8 +1,11 @@
+import pandas as pd
 from DataAnalysis import DataAnalyzer
 from Metrics import MetricsAnalyzer
 from PlotAnalysis import PlotAnalyzer
 from AggregationAnalysis import AggregationAnalyzer
+from LSTMAnalysis import LSTMAnalyzer
 import os
+import torch
 
 if __name__ == "__main__":
     # Define paths and channels
@@ -17,41 +20,39 @@ if __name__ == "__main__":
     analyzer.load_labels()
     analyzer.load_data()
 
-    # Plot time series for each channel
-    analyzer.plot_time_series()
-
-    # Calculate metrics for the data
-    analyzer.calculate_metrics()
-
-    # Display metrics and save them to a CSV file
-    analyzer.display_metrics()
-
-    # Initialize MetricsAnalyzer with loaded data
-    metrics = MetricsAnalyzer(data_dict=analyzer.data_dict, labels=analyzer.labels)
-
-    # Calculate and display additional metrics
-    metrics.display_metrics()
-
-    # Initialize PlotAnalyzer with loaded data
-    plot_analyzer = PlotAnalyzer(data_dict=analyzer.data_dict, labels=analyzer.labels)
-
-    # Plot recommended visualizations
-    plot_analyzer.plot_histograms()
-    plot_analyzer.plot_correlograms()
-
     # Initialize AggregationAnalyzer cu datele încărcate
     aggregation_analyzer = AggregationAnalyzer(data_dict=analyzer.data_dict, labels=analyzer.labels)
 
-    # Agregare zilnică (sumarizare zilnică)
-    aggregation_analyzer.display_aggregated_data(freq='D')
-
-    # Agregare săptămânală
-    aggregation_analyzer.display_aggregated_data(freq='W')
-
     # Reducere granularitate la 1 minut
-    aggregation_analyzer.display_downsampled_data(freq='1T')
+    downsampled_data = aggregation_analyzer.downsample_data(freq='1T')
+    channel_1_downsampled = downsampled_data.get('channel_1.dat')
 
-    # Salvare date agregate și cu granularitate redusă
-    output_dir = r'C:\Users\elecf\Desktop\Licenta\Date\UK-DALE-disaggregated\house_3'
-    aggregation_analyzer.save_aggregated_data(freq='D', output_dir=output_dir)
-    aggregation_analyzer.save_downsampled_data(freq='1T', output_dir=output_dir)
+    # Verificăm dacă datele există
+    if channel_1_downsampled is not None:
+        # Pregătire pentru LSTM
+        channel_1_data = channel_1_downsampled['power'].dropna().values
+
+        # Inițializare și rulare LSTM Analyzer
+        lstm_analyzer = LSTMAnalyzer(data=channel_1_data, seq_length=10, epochs=20, batch_size=64)
+        lstm_analyzer.train()
+
+        # Plotarea pierderii
+        lstm_analyzer.plot_loss()
+
+        # Predicții pentru următoarele 24 de minute
+        next_minute_predictions = lstm_analyzer.predict_next_day()
+        print("Predicted values for the next 24 minutes:")
+
+        # Crearea unui tabel
+        minutes = [f"Minute {i + 1}" for i in range(24)]
+        prediction_table = pd.DataFrame({
+            "Minute": minutes,
+            "Predicted Power (W)": next_minute_predictions
+        })
+
+        # Salvarea tabelului într-un fișier CSV
+        output_path = os.path.join(house3_dir, "next_minute_predictions.csv")
+        prediction_table.to_csv(output_path, index=False)
+        print(f"Predictions saved to {output_path}")
+    else:
+        print("Downsampled data for channel_1 is unavailable.")
