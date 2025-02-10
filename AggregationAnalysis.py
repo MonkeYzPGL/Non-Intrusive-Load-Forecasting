@@ -34,28 +34,6 @@ class AggregationAnalyzer:
                 downsampled_data[channel] = data.resample(freq).mean()
         return downsampled_data
 
-    def display_aggregated_data(self, freq):
-        """
-        Agrega datele si le afiseaza sumarizat.
-        :param freq: Frecventa pentru agregare.
-        """
-        aggregated_data = self.aggregate_data(freq)
-        print(f"Aggregated Data ({freq}):")
-        for channel, data in aggregated_data.items():
-            print(f"\nChannel: {self.labels.get(channel, 'Unknown')}")
-            print(data.head())
-
-    def display_downsampled_data(self, freq):
-        """
-        Reduce granularitatea datelor si le afiseaza sumarizat.
-        :param freq: Frecventa dorita pentru reducerea granularitatii.
-        """
-        downsampled_data = self.downsample_data(freq)
-        print(f"Downsampled Data ({freq}):")
-        for channel, data in downsampled_data.items():
-            print(f"\nChannel: {self.labels.get(channel, 'Unknown')}")
-            print(data.head())
-
     def save_aggregated_data(self, freq, output_dir):
         """
         Salveaza datele agregate intr-un director.
@@ -71,11 +49,13 @@ class AggregationAnalyzer:
     def save_downsampled_data(self, freq, output_dir):
         """
         Salveaza datele cu granularitate redusa intr-un director.
+        Inlocuieste valorile lipsa (NaN) cu 0 inainte de salvare.
         :param freq: Frecventa dorita pentru reducerea granularitatii.
         :param output_dir: Directorul unde sa se salveze datele.
         """
         downsampled_data = self.downsample_data(freq)
         for channel, data in downsampled_data.items():
+            data.fillna(0, inplace=True)
             output_path = os.path.join(output_dir, f"{channel}_downsampled_{freq}.csv")
             data.to_csv(output_path)
             print(f"Downsampled data saved to {output_path}")

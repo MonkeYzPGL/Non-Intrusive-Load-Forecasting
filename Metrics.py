@@ -2,14 +2,15 @@ import pandas as pd
 from scipy.stats import pearsonr
 from tabulate import tabulate
 
+
 class MetricsAnalyzer:
     def __init__(self, data_dict, labels):
         self.data_dict = data_dict
         self.labels = labels
-        self.metrics_df = None
+        self.metrics_df = {}
 
     def calculate_daily_average(self):
-        """Calculam average-ul consumului energetic pentru fiecare canal"""
+        """Calculăm media zilnică a consumului energetic pentru fiecare canal"""
         daily_averages = []
         for channel, data in self.data_dict.items():
             if data is not None:
@@ -22,7 +23,7 @@ class MetricsAnalyzer:
         return pd.DataFrame(daily_averages)
 
     def identify_peaks(self):
-        """Identificam peak-ul consumului pentru fiecare canal"""
+        """Identificăm peak-ul consumului pentru fiecare canal"""
         peaks = []
         for channel, data in self.data_dict.items():
             if data is not None:
@@ -36,9 +37,9 @@ class MetricsAnalyzer:
         return pd.DataFrame(peaks)
 
     def calculate_correlation(self):
-        """Calculam corelatia energetica intre consumul total si canalele individuale"""
+        """Calculăm corelația energetică între consumul total și canalele individuale"""
         if 'channel_1.dat' not in self.data_dict or self.data_dict['channel_1.dat'] is None:
-            print("Channel 1 data is required for correlation calculation.")
+            print("⚠️ Channel 1 data is necesară pentru calculul corelației.")
             return None
 
         total_power = self.data_dict['channel_1.dat']['power']
@@ -56,7 +57,7 @@ class MetricsAnalyzer:
         return pd.DataFrame(correlations)
 
     def display_metrics(self):
-        """Combina si da display la toate metricile"""
+        """Combină și afișează toate metricile"""
         daily_averages = self.calculate_daily_average()
         peaks = self.identify_peaks()
         correlations = self.calculate_correlation()
@@ -68,5 +69,19 @@ class MetricsAnalyzer:
         }
 
         for key, df in self.metrics_df.items():
-            print(f"\n{key}:")
+            print(f"\n📊 {key}:")
             print(tabulate(df, headers='keys', tablefmt='grid'))
+
+    def save_metrics(self, output_path):
+        """Salvează metricile într-un fișier CSV"""
+        if not self.metrics_df:
+            print("⚠️ Nu există metrici calculate! Asigură-te că ai rulat `display_metrics()` înainte de a salva.")
+            return
+
+        # Combinăm toate metricile într-un singur DataFrame
+        with open(output_path, 'w') as f:
+            for key, df in self.metrics_df.items():
+                f.write(f"\n### {key} ###\n")
+                df.to_csv(f, index=False)
+
+        print(f"✅ Metricile generale au fost salvate în: {output_path}")
