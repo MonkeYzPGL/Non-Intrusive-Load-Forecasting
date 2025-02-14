@@ -1,3 +1,4 @@
+import numpy as np
 import pandas as pd
 from scipy.stats import pearsonr
 from tabulate import tabulate
@@ -56,27 +57,9 @@ class MetricsAnalyzer:
                     })
         return pd.DataFrame(correlations)
 
-    def display_metrics(self):
-        """Combină și afișează toate metricile"""
-        daily_averages = self.calculate_daily_average()
-        peaks = self.identify_peaks()
-        correlations = self.calculate_correlation()
-
-        self.metrics_df = {
-            'Daily Averages': daily_averages,
-            'Peaks': peaks,
-            'Correlations': correlations
-        }
-
-        for key, df in self.metrics_df.items():
-            print(f"\n📊 {key}:")
-            print(tabulate(df, headers='keys', tablefmt='grid'))
 
     def save_metrics(self, output_path):
         """Salvează metricile într-un fișier CSV"""
-        if not self.metrics_df:
-            print("⚠️ Nu există metrici calculate! Asigură-te că ai rulat `display_metrics()` înainte de a salva.")
-            return
 
         # Combinăm toate metricile într-un singur DataFrame
         with open(output_path, 'w') as f:
@@ -85,3 +68,7 @@ class MetricsAnalyzer:
                 df.to_csv(f, index=False)
 
         print(f"✅ Metricile generale au fost salvate în: {output_path}")
+
+    def mape(self):
+        mask = (self.actuals != 0) & (self.actuals > 1)  # Evită împărțirea la zero și valori extrem de mici
+        return np.mean(np.abs((self.actuals[mask] - self.predictions[mask]) / self.actuals[mask])) * 100
