@@ -22,17 +22,18 @@ class TimeSeriesDataset(Dataset):
         return self.X[idx], self.y[idx]
 
 class LSTMAnalyzer:
-    def __init__(self, csv_path, window_size=20, batch_size=512, hidden_size=256, learning_rate=0.001, device=None):
+    def __init__(self, csv_path, window_size=30, batch_size=128, hidden_size=512, learning_rate=0.001):
         self.csv_path = csv_path
         self.window_size = window_size
         self.batch_size = batch_size
         self.hidden_size = hidden_size
         self.learning_rate = learning_rate
-        self.device = device or torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.device =  torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         print(f"Utlizare dispozivitivul : {torch.cuda.get_device_name(0)}")
 
         # Modelul LSTM
-        self.model = LSTMModel(input_size=6, hidden_size=hidden_size, output_size=1).to(self.device)
+        self.model = LSTMModel(input_size=10, hidden_size=hidden_size, output_size=1).to(self.device)
+        self.model.to(self.device)
 
         # Functia de cost si optimizer si scheduler-ul pentru Learning Rate
         self.criterion = nn.SmoothL1Loss() #MAE
@@ -46,20 +47,38 @@ class LSTMAnalyzer:
         data['timestamp'] = pd.to_datetime(data['timestamp'])
         data['day_of_week'] = data['timestamp'].dt.dayofweek
         data['hour_of_day'] = data['timestamp'].dt.hour
-        data['power'] = pd.to_numeric(data['power'], errors='coerce').fillna(0)
+        data['power'] = pd.to_numeric(data['power'], errors='coerce').fillna(0)  # Conversie în numeric
+
+        # Creare caracteristici suplimentare
+        data["hour_sin"] = np.sin(2 * np.pi * data["hour_of_day"] / 24)
+        data["hour_cos"] = np.cos(2 * np.pi * data["hour_of_day"] / 24)
+        data["day_sin"] = np.sin(2 * np.pi * data["day_of_week"] / 7)
+        data["day_cos"] = np.cos(2 * np.pi * data["day_of_week"] / 7)
 
         lags = [12, 24, 48]
         for lag in lags:
-            data[f'lag_{lag}h'] = data['power'].shift(lag)
+            data[f'lag_{lag}h'] = data['power'].shift(lag)  # 🔹 Aplicăm lag pe power_log
         data.fillna(0, inplace=True)
 
         data['rolling_mean_12h'] = data['power'].rolling(window=12, min_periods=1).mean()
 
-        self.scaler = MinMaxScaler(feature_range=(0, 1))
+        self.scaler = MinMaxScaler(feature_range=(0, 10))
 
-        scaled_features = self.scaler.fit_transform(data[['power', 'day_of_week', 'hour_of_day', 'lag_12h', 'lag_24h', 'lag_48h']])
-        data[['scaled_power', 'scaled_day_of_week', 'scaled_hour_of_day', 'scaled_lag_12h', 'scaled_lag_24h', 'scaled_lag_48h']] = scaled_features
-        selected_features = ['scaled_power', 'scaled_day_of_week', 'scaled_hour_of_day', 'scaled_lag_12h', 'scaled_lag_24h', 'scaled_lag_48h']
+        # 🔹 Folosim power_log în loc de power pentru scalare
+        scaled_features = self.scaler.fit_transform(
+            data[['power', 'day_of_week', 'hour_of_day', 'lag_12h', 'lag_24h', 'lag_48h',
+                  'hour_sin', 'hour_cos', 'day_sin', 'day_cos']]
+        )
+
+        data[['scaled_power', 'scaled_day_of_week', 'scaled_hour_of_day', 'scaled_lag_12h',
+              'scaled_lag_24h', 'scaled_lag_48h', 'scaled_hour_sin', 'scaled_hour_cos',
+              'scaled_day_sin', 'scaled_day_hour']] = scaled_features
+
+        # 🔹 Selectăm scaled_power_log în loc de scaled_power
+        selected_features = ['scaled_power', 'scaled_day_of_week', 'scaled_hour_of_day',
+                             'scaled_lag_12h', 'scaled_lag_24h', 'scaled_lag_48h',
+                             'scaled_hour_sin', 'scaled_hour_cos', 'scaled_day_sin', 'scaled_day_hour']
+
         X, y = self.create_sequences(data[selected_features].values)
 
         # Impartirea datelor in antrenare/validare/test
@@ -142,6 +161,7 @@ class LSTMAnalyzer:
         """Genereaza predictii si denormalizeaza rezultatele."""
         self.model.eval()
         predictions, actuals = [], []
+
         with torch.no_grad():
             for X_batch, y_batch in self.test_loader:
                 X_batch = X_batch.to(self.device)
@@ -151,12 +171,12 @@ class LSTMAnalyzer:
                 y_pred = np.where(y_batch.cpu().numpy() == 0, 0, y_pred)
 
                 # Denormalizare
-                y_pred_expanded = np.zeros((len(y_pred), 6))  # 6 este numarul de features
+                y_pred_expanded = np.zeros((len(y_pred), 10))  # 10 este numarul de features
                 y_pred_expanded[:, 0] = y_pred
                 y_pred = self.scaler.inverse_transform(y_pred_expanded)[:, 0]
                 y_pred = np.maximum(0, y_pred)
 
-                y_batch_expanded = np.zeros((len(y_batch.cpu().numpy()), 6))
+                y_batch_expanded = np.zeros((len(y_batch.cpu().numpy()), 10))
                 y_batch_expanded[:, 0] = y_batch.cpu().numpy()
                 y_batch = self.scaler.inverse_transform(y_batch_expanded)[:, 0]
 

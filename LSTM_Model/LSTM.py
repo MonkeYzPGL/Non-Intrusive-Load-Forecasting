@@ -17,7 +17,7 @@ class Attention(nn.Module):
         return context
 
 class LSTMModel(nn.Module):
-    def __init__(self, input_size=9, hidden_size=256, output_size=1, num_layers=3, dropout=0.3):
+    def __init__(self, input_size=9, hidden_size=256, output_size=1, num_layers=3, dropout=0.2):
         super(LSTMModel, self).__init__()
         self.lstm = nn.LSTM(input_size, hidden_size, num_layers=num_layers, batch_first=True, dropout=dropout, bidirectional=True)
         self.attention = Attention(hidden_size)
