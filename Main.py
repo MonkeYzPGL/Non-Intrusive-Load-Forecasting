@@ -17,6 +17,7 @@ if __name__ == "__main__":
     downsampled_dir = os.path.join(base_dir, "downsampled")
     metrics_dir = os.path.join(base_dir, "metrics")
     predictii_dir = os.path.join(base_dir, "predictii")
+    models_dir = os.path.join(base_dir, "modele_salvate")
 
     os.makedirs(aggregated_dir, exist_ok=True)
     os.makedirs(downsampled_dir, exist_ok=True)
@@ -63,7 +64,7 @@ if __name__ == "__main__":
     aggregation_analyzer.save_downsampled_data(freq='1T', output_dir=downsampled_dir)
 
     # Verificam daca exista fisierul cu datele downsampled pentru canalul 5
-    channel_5_downsampled_path = os.path.join(downsampled_dir, 'channel_4.dat_downsampled_10S.csv')
+    channel_5_downsampled_path = os.path.join(downsampled_dir, 'channel_5.dat_downsampled_10S.csv')
 
     if os.path.exists(channel_5_downsampled_path):
         print(f"✅ File found: {channel_5_downsampled_path}")
@@ -73,19 +74,20 @@ if __name__ == "__main__":
         lstm_analyzer.preprocess_data()
 
         # Antrenare model
-        lstm_analyzer.train()
+        lstm_model_path = os.path.join(models_dir, 'lstm_model_ch5.pth')
+        lstm_analyzer.train(model_path = lstm_model_path)
 
         # Generam predictii
         predictions, actuals = lstm_analyzer.predict()
 
         # Salvam predictiile in folderul `predictii/`
-        prediction_output_path = os.path.join(predictii_dir, 'channel_4_predictions.csv')
+        prediction_output_path = os.path.join(predictii_dir, 'channel_5_predictions.csv')
         prediction_df = pd.DataFrame({'Predictions': predictions, 'Actuals': actuals})
         prediction_df.to_csv(prediction_output_path, index=False)
         print(f"✅ Predictions saved in: {prediction_output_path}")
 
         # Calculam si salvam metricile de eroare in `metrics/`
-        error_metrics_path = os.path.join(metrics_dir, "channel_4_lstm_error_metrics.csv")
+        error_metrics_path = os.path.join(metrics_dir, "channel_5_lstm_error_metrics.csv")
         error_metrics_analyzer = ErrorMetricsAnalyzer(predictions=predictions, actuals=actuals, output_path=error_metrics_path)
         error_metrics_analyzer.save_metrics()
         print(f"✅ Error metrics saved in: {error_metrics_path}")

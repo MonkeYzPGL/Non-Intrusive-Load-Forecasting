@@ -9,6 +9,7 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
 import torch.optim.lr_scheduler as lr_scheduler
 import time
+import os
 
 class TimeSeriesDataset(Dataset):
     def __init__(self, X, y):
@@ -40,7 +41,6 @@ class LSTMAnalyzer:
         self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=learning_rate)
         self.scheduler = lr_scheduler.ReduceLROnPlateau(self.optimizer, mode='min', factor=0.5, patience=3, verbose=True)
 
-    # Adăugăm print-uri pentru a măsura timpul fiecărei operațiuni din preprocess_data
     def preprocess_data(self):
         # Citirea datelor
         data = pd.read_csv(self.csv_path)
@@ -74,7 +74,7 @@ class LSTMAnalyzer:
                   'rolling_mean_12h', 'rolling_std_12h', 'rolling_max_12h']]
         )
 
-        # Adăugare caracteristici scalate în DataFrame
+        # Adaugare caracteristici scalate
         data[['scaled_power', 'scaled_delta_power', 'scaled_day_of_week', 'scaled_hour_of_day',
               'scaled_lag_1h', 'scaled_lag_3h', 'scaled_lag_6h', 'scaled_lag_12h', 'scaled_lag_24h', 'scaled_lag_48h',
               'scaled_hour_sin', 'scaled_hour_cos', 'scaled_day_sin', 'scaled_day_cos',
@@ -108,8 +108,10 @@ class LSTMAnalyzer:
         labels = [data[i + self.window_size, 0] for i in range(len(data) - self.window_size)]
         return torch.tensor(np.array(sequences), dtype=torch.float32), torch.tensor(np.array(labels), dtype=torch.float32)
 
-    def train(self, epochs=100, patience=5):
-        """Antreneaza modelul LSTM , folosind si Early Stopping."""
+    def train(self, epochs=100, patience=5, model_path = None):
+        """
+        Antreneaza modelul LSTM , folosind si Early Stopping + LEarning Scheduler
+        """
         train_losses = []
         val_losses = []
         best_val_loss = float('inf')
@@ -146,8 +148,16 @@ class LSTMAnalyzer:
                     param_group["lr"] *= 0.9  # 🔹 Reducem LR cu 50%
                     print(f"🔽 Learning Rate redus la {param_group['lr']:.6f}")
 
-            # EARLY STOPPING: verificam daca loss-ul pe validare nu mai scade
+            # EARLY STOPPING
             if val_losses[-1] < best_val_loss:
+                if model_path is not None:
+                    os.makedirs(os.path.dirname(model_path), exist_ok=True)
+                    model_save_path = model_path
+                else:
+                    model_save_path = "saved_lstm_model.pth"
+
+                torch.save(self.model.state_dict(), model_save_path)
+                print(f"✅ Model salvat la: {model_save_path} (epoch {epoch + 1}) cu val_loss: {val_losses[-1]:.4f}")
                 best_val_loss = val_losses[-1]
                 patience_counter = 0  # Resetare counter daca loss-ul scade
             else:
@@ -166,7 +176,9 @@ class LSTMAnalyzer:
         plt.show()
 
     def predict(self):
-        """Genereaza predictii si denormalizeaza rezultatele."""
+        """
+        Genereaza predictii si denormalizeaza rezultatele.
+        """
         self.model.eval()
         predictions, actuals = [], []
 
@@ -175,11 +187,10 @@ class LSTMAnalyzer:
                 X_batch = X_batch.to(self.device)
                 y_pred = self.model(X_batch).squeeze().cpu().numpy()
 
-                # Aplicăm regula: Dacă valoarea reală este 0, forțăm predicția să fie 0
                 y_pred = np.where(y_batch.cpu().numpy() == 0, 0, y_pred)
 
                 # Denormalizare
-                y_pred_expanded = np.zeros((len(y_pred), 17))  # 10 este numarul de features
+                y_pred_expanded = np.zeros((len(y_pred), 17))  # 17 = nr features
                 y_pred_expanded[:, 0] = y_pred
                 y_pred = self.scaler.inverse_transform(y_pred_expanded)[:, 0]
                 y_pred = np.maximum(0, y_pred)
@@ -192,3 +203,45 @@ class LSTMAnalyzer:
                 actuals.extend(y_batch)
 
         return predictions, actuals
+
+    def load_model(self, model_path="saved_lstm_model.pth"):
+        """
+        Incarca un model antrenat anterior dacă exista.
+        """
+        if os.path.exists(model_path):
+            self.model.load_state_dict(torch.load(model_path, map_location=self.device))
+            self.model.to(self.device)
+            self.model.eval()
+            print(f" Model incarcat din {model_path}")
+        else:
+            print(" Modelul nu exista! Trebuie sa fie antrenat inainte de a putea fi folosit.")
+
+    def predict_future(self, future_steps):
+        """
+        Genereaza predicții pentru un numar specific de pasi in viitor.
+        """
+        self.model.eval()
+        predictions = []
+
+        # Folosim ultimele `window_size` valori ca punct de start
+        last_sequence = self.test_loader.dataset.X[-1].unsqueeze(0).to(self.device)
+
+        with torch.no_grad():
+            for _ in range(future_steps):
+                y_pred = self.model(last_sequence).squeeze().cpu().numpy()
+
+                # Denormalizare
+                y_pred_expanded = np.zeros((1, 17))
+                y_pred_expanded[:, 0] = y_pred
+                y_pred = self.scaler.inverse_transform(y_pred_expanded)[:, 0][0]
+
+                # Salvare predicctie
+                predictions.append(y_pred)
+
+                # Construim urmatoarea secventa, eliminand prima valoare si adaugand noua predictie
+                new_input = last_sequence.squeeze(0).cpu().numpy()
+                new_input[:-1] = new_input[1:]  # Shift la stânga
+                new_input[-1, 0] = self.scaler.transform([[y_pred] + [0] * 16])[0][0]  # Adaugare predictie
+                last_sequence = torch.tensor(new_input, dtype=torch.float32).unsqueeze(0).to(self.device)
+
+        return predictions

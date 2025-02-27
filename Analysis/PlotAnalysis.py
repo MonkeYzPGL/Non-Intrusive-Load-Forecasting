@@ -31,3 +31,17 @@ class PlotAnalyzer:
             sns.heatmap(combined_data.corr(), annot=True, fmt=".2f", cmap="coolwarm")
             plt.title("Correlogram of Appliance Power Consumption")
             plt.show()
+
+    def plot_future_predictions(self, future_file, future_steps):
+        """
+        Afiseaza predictiile generate pentru viitor.
+        """
+        data = pd.read_csv(future_file)
+
+        plt.figure(figsize=(12, 6))
+        plt.plot(data['Future Predictions'], label=f'Predicted Power ({future_steps} steps)', color='red')
+        plt.xlabel("Time Steps")
+        plt.ylabel("Power Consumption (W)")
+        plt.title(f"Future Power Consumption Predictions for {future_steps} Steps")
+        plt.legend()
+        plt.show()
