@@ -22,7 +22,7 @@ class TimeSeriesDataset(Dataset):
         return self.X[idx], self.y[idx]
 
 class LSTMAnalyzer:
-    def __init__(self, csv_path, window_size=30, batch_size=128, hidden_size=512, learning_rate=0.001):
+    def __init__(self, csv_path, window_size=35, batch_size=128, hidden_size=512, learning_rate=0.001):
         self.csv_path = csv_path
         self.window_size = window_size
         self.batch_size = batch_size
@@ -32,7 +32,7 @@ class LSTMAnalyzer:
         print(f"Utlizare dispozivitivul : {torch.cuda.get_device_name(0)}")
 
         # Modelul LSTM
-        self.model = LSTMModel(input_size=10, hidden_size=hidden_size, output_size=1).to(self.device)
+        self.model = LSTMModel(input_size=17, hidden_size=hidden_size, output_size=1).to(self.device)
         self.model.to(self.device)
 
         # Functia de cost si optimizer si scheduler-ul pentru Learning Rate
@@ -42,7 +42,7 @@ class LSTMAnalyzer:
 
     # Adăugăm print-uri pentru a măsura timpul fiecărei operațiuni din preprocess_data
     def preprocess_data(self):
-        """Incarca si preproceseaza datele."""
+        # Citirea datelor
         data = pd.read_csv(self.csv_path)
         data['timestamp'] = pd.to_datetime(data['timestamp'])
         data['day_of_week'] = data['timestamp'].dt.dayofweek
@@ -55,29 +55,37 @@ class LSTMAnalyzer:
         data["day_sin"] = np.sin(2 * np.pi * data["day_of_week"] / 7)
         data["day_cos"] = np.cos(2 * np.pi * data["day_of_week"] / 7)
 
-        lags = [12, 24, 48]
+        # Aplicare lag-uri
+        lags = [1, 3, 6, 12, 24, 48]
         for lag in lags:
-            data[f'lag_{lag}h'] = data['power'].shift(lag)  # 🔹 Aplicăm lag pe power_log
-        data.fillna(0, inplace=True)
+            data[f'lag_{lag}h'] = data['power'].shift(lag).fillna(0)  # Elimină NaN
 
-        data['rolling_mean_12h'] = data['power'].rolling(window=12, min_periods=1).mean()
+        # Creare caracteristici temporale avansate
+        data['delta_power'] = data['power'].diff().fillna(0)
+        data['rolling_mean_12h'] = data['power'].rolling(window=12, min_periods=1).mean().fillna(0)
+        data['rolling_std_12h'] = data['power'].rolling(window=12, min_periods=1).std().fillna(0)
+        data['rolling_max_12h'] = data['power'].rolling(window=12, min_periods=1).max().fillna(0)
 
+        # Normalizare (scalare) folosind MinMaxScaler
         self.scaler = MinMaxScaler(feature_range=(0, 10))
-
-        # 🔹 Folosim power_log în loc de power pentru scalare
         scaled_features = self.scaler.fit_transform(
-            data[['power', 'day_of_week', 'hour_of_day', 'lag_12h', 'lag_24h', 'lag_48h',
-                  'hour_sin', 'hour_cos', 'day_sin', 'day_cos']]
+            data[['power', 'delta_power', 'day_of_week', 'hour_of_day', 'lag_1h', 'lag_3h', 'lag_6h', 'lag_12h',
+                  'lag_24h', 'lag_48h', 'hour_sin', 'hour_cos', 'day_sin', 'day_cos',
+                  'rolling_mean_12h', 'rolling_std_12h', 'rolling_max_12h']]
         )
 
-        data[['scaled_power', 'scaled_day_of_week', 'scaled_hour_of_day', 'scaled_lag_12h',
-              'scaled_lag_24h', 'scaled_lag_48h', 'scaled_hour_sin', 'scaled_hour_cos',
-              'scaled_day_sin', 'scaled_day_hour']] = scaled_features
+        # Adăugare caracteristici scalate în DataFrame
+        data[['scaled_power', 'scaled_delta_power', 'scaled_day_of_week', 'scaled_hour_of_day',
+              'scaled_lag_1h', 'scaled_lag_3h', 'scaled_lag_6h', 'scaled_lag_12h', 'scaled_lag_24h', 'scaled_lag_48h',
+              'scaled_hour_sin', 'scaled_hour_cos', 'scaled_day_sin', 'scaled_day_cos',
+              'scaled_rolling_mean_12h', 'scaled_rolling_std_12h', 'scaled_rolling_max_12h']] = scaled_features
 
-        # 🔹 Selectăm scaled_power_log în loc de scaled_power
-        selected_features = ['scaled_power', 'scaled_day_of_week', 'scaled_hour_of_day',
-                             'scaled_lag_12h', 'scaled_lag_24h', 'scaled_lag_48h',
-                             'scaled_hour_sin', 'scaled_hour_cos', 'scaled_day_sin', 'scaled_day_hour']
+        # Selectarea caracteristicilor finale pentru antrenare
+        selected_features = ['scaled_power', 'scaled_delta_power', 'scaled_day_of_week', 'scaled_hour_of_day',
+                             'scaled_lag_1h', 'scaled_lag_3h', 'scaled_lag_6h', 'scaled_lag_12h', 'scaled_lag_24h',
+                             'scaled_lag_48h',
+                             'scaled_hour_sin', 'scaled_hour_cos', 'scaled_day_sin', 'scaled_day_cos',
+                             'scaled_rolling_mean_12h', 'scaled_rolling_std_12h', 'scaled_rolling_max_12h']
 
         X, y = self.create_sequences(data[selected_features].values)
 
@@ -171,12 +179,12 @@ class LSTMAnalyzer:
                 y_pred = np.where(y_batch.cpu().numpy() == 0, 0, y_pred)
 
                 # Denormalizare
-                y_pred_expanded = np.zeros((len(y_pred), 10))  # 10 este numarul de features
+                y_pred_expanded = np.zeros((len(y_pred), 17))  # 10 este numarul de features
                 y_pred_expanded[:, 0] = y_pred
                 y_pred = self.scaler.inverse_transform(y_pred_expanded)[:, 0]
                 y_pred = np.maximum(0, y_pred)
 
-                y_batch_expanded = np.zeros((len(y_batch.cpu().numpy()), 10))
+                y_batch_expanded = np.zeros((len(y_batch.cpu().numpy()), 17))
                 y_batch_expanded[:, 0] = y_batch.cpu().numpy()
                 y_batch = self.scaler.inverse_transform(y_batch_expanded)[:, 0]
 

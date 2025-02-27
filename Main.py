@@ -1,8 +1,8 @@
 from Analysis.DataAnalysis import DataAnalyzer
-from Metrics import MetricsAnalyzer
+from Metrics.Metrics import MetricsAnalyzer
 from Analysis.AggregationAnalysis import AggregationAnalyzer
 from LSTM_Model.LSTMAnalysis import LSTMAnalyzer
-from ErrorMetrics import ErrorMetricsAnalyzer
+from Metrics.ErrorMetrics import ErrorMetricsAnalyzer
 import os
 import pandas as pd
 
@@ -63,7 +63,7 @@ if __name__ == "__main__":
     aggregation_analyzer.save_downsampled_data(freq='1T', output_dir=downsampled_dir)
 
     # Verificam daca exista fisierul cu datele downsampled pentru canalul 5
-    channel_5_downsampled_path = os.path.join(downsampled_dir, 'channel_5.dat_downsampled_1T.csv')
+    channel_5_downsampled_path = os.path.join(downsampled_dir, 'channel_4.dat_downsampled_10S.csv')
 
     if os.path.exists(channel_5_downsampled_path):
         print(f"✅ File found: {channel_5_downsampled_path}")
@@ -79,13 +79,13 @@ if __name__ == "__main__":
         predictions, actuals = lstm_analyzer.predict()
 
         # Salvam predictiile in folderul `predictii/`
-        prediction_output_path = os.path.join(predictii_dir, 'channel_5_predictions.csv')
+        prediction_output_path = os.path.join(predictii_dir, 'channel_4_predictions.csv')
         prediction_df = pd.DataFrame({'Predictions': predictions, 'Actuals': actuals})
         prediction_df.to_csv(prediction_output_path, index=False)
         print(f"✅ Predictions saved in: {prediction_output_path}")
 
         # Calculam si salvam metricile de eroare in `metrics/`
-        error_metrics_path = os.path.join(metrics_dir, "channel_5_lstm_error_metrics.csv")
+        error_metrics_path = os.path.join(metrics_dir, "channel_4_lstm_error_metrics.csv")
         error_metrics_analyzer = ErrorMetricsAnalyzer(predictions=predictions, actuals=actuals, output_path=error_metrics_path)
         error_metrics_analyzer.save_metrics()
         print(f"✅ Error metrics saved in: {error_metrics_path}")

@@ -17,15 +17,15 @@ class Attention(nn.Module):
         return context
 
 class LSTMModel(nn.Module):
-    def __init__(self, input_size=9, hidden_size=256, output_size=1, num_layers=3, dropout=0.2):
+    def __init__(self, input_size, hidden_size, output_size):
         super(LSTMModel, self).__init__()
-        self.lstm = nn.LSTM(input_size, hidden_size, num_layers=num_layers, batch_first=True, dropout=dropout, bidirectional=True)
-        self.attention = Attention(hidden_size)
-        self.fc = nn.Linear(hidden_size * 2, output_size)
-        self.activation = nn.Identity()
+        self.lstm = nn.LSTM(input_size, hidden_size, batch_first=True)
+        self.fc1 = nn.Linear(hidden_size, hidden_size // 2)
+        self.fc2 = nn.Linear(hidden_size // 2, output_size)
+        self.relu = nn.ReLU()
 
     def forward(self, x):
         lstm_out, _ = self.lstm(x)
-        context = self.attention(lstm_out, lstm_out)
-        out = self.fc(context)
-        return self.activation(out)
+        x = self.relu(self.fc1(lstm_out[:, -1, :]))
+        x = self.fc2(x)
+        return x
