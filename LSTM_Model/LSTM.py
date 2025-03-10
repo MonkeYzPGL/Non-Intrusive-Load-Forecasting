@@ -1,41 +1,54 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
+
 
 class Attention(nn.Module):
-    """Mecanism de Atenție pentru LSTM."""
+    """Scaled Dot-Product Attention pentru imbunatatirea ponderii"""
     def __init__(self, hidden_size):
         super(Attention, self).__init__()
-        self.attn = nn.Linear(hidden_size, hidden_size)
-        self.v = nn.Linear(hidden_size, 1, bias=False)
+        self.scale = 1.0 / (hidden_size ** 0.5)
+        self.softmax = nn.Softmax(dim=1)
 
     def forward(self, lstm_out):
-        attn_weights = F.softmax(self.v(torch.tanh(self.attn(lstm_out))), dim=1)
-        context = torch.sum(attn_weights * lstm_out, dim=1)
-        return context
+        attn_scores = torch.matmul(lstm_out, lstm_out.transpose(1, 2)) * self.scale
+        attn_weights = self.softmax(attn_scores)
+        context = torch.matmul(attn_weights, lstm_out)
+        return context[:, -1, :]  # Luam ultima valoare din secventa
 
 class LSTMModel(nn.Module):
-    def __init__(self, input_size, hidden_size, output_size, num_layers=2, dropout=0.3):
+    def __init__(self, input_size, hidden_size, output_size, num_layers=3, dropout=0.3):
         super(LSTMModel, self).__init__()
         self.hidden_size = hidden_size
         self.num_layers = num_layers
 
-        self.lstm = nn.LSTM(input_size, hidden_size, num_layers=num_layers, batch_first=True, dropout=dropout)
+        # Strat LSTM Bidirecțional pentru a captura mai multe relatii temporale
+        self.lstm = nn.LSTM(input_size, hidden_size, num_layers=num_layers,
+                            batch_first=True, dropout=dropout, bidirectional=True)
 
-        self.attention = Attention(hidden_size)
+        # Attention Layer optimizat
+        self.attention = Attention(hidden_size * 2)  # *2 pentru bidirecțional
 
-        self.fc1 = nn.Linear(hidden_size, hidden_size // 2)
-        self.fc2 = nn.Linear(hidden_size // 2, output_size)
+        # Normalizare pentru stabilizare
+        self.batch_norm = nn.BatchNorm1d(hidden_size * 2)
+
+        # Straturi fully connected imbunatatite
+        self.fc1 = nn.Linear(hidden_size * 2, hidden_size)
+        self.fc2 = nn.Linear(hidden_size, hidden_size // 2)
+        self.fc3 = nn.Linear(hidden_size // 2, output_size)
 
         self.leaky_relu = nn.LeakyReLU(0.1)
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):
         lstm_out, _ = self.lstm(x)
-
         context = self.attention(lstm_out)
+
+        # Aplicam Batch Norm doar daca dimensiunea permite
+        if context.shape[0] > 1:
+            context = self.batch_norm(context)
 
         x = self.leaky_relu(self.fc1(context))
         x = self.dropout(x)
-        x = self.fc2(x)
+        x = self.leaky_relu(self.fc2(x))
+        x = self.fc3(x)
         return x

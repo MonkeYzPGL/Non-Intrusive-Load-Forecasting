@@ -34,7 +34,7 @@ class LSTMAnalyzer:
         print(f"Utlizare dispozivitivul : {torch.cuda.get_device_name(0)}")
 
         # Modelul LSTM
-        self.model = LSTMModel(input_size=20, hidden_size=hidden_size, output_size=1).to(self.device)
+        self.model = LSTMModel(input_size=21, hidden_size=hidden_size, output_size=1).to(self.device)
         self.model.to(self.device)
 
         # Functia de cost si optimizer si scheduler-ul pentru Learning Rate
@@ -62,7 +62,7 @@ class LSTMAnalyzer:
         data["minute_cos"] = np.cos(2 * np.pi * data["minute_of_hour"] / 60)
 
         # Aplicare lag-uri
-        lags = [1, 3, 6, 12, 24]
+        lags = [1, 3, 6, 12, 24, 48]
         for lag in lags:
             data[f'lag_{lag}h'] = data['power'].shift(lag)
 
@@ -75,45 +75,39 @@ class LSTMAnalyzer:
         data['rolling_min_12h'] = data['power'].rolling('12h').min().shift(1)
         data['rolling_median_12h'] = data['power'].rolling('12h').median().shift(1)
 
+        # Umplem valorile lipsă
         data = data.interpolate(method='linear', limit_direction='both')
 
-        # Normalizare (scalare) folosind MinMaxScaler
+        # Împărțirea datelor înainte de scalare
+        train_size = int(0.8 * len(data))
+        val_size = int(0.1 * len(data))
+
+        train_data = data.iloc[:train_size]
+        val_data = data.iloc[train_size:train_size + val_size]
+        test_data = data.iloc[train_size + val_size:]
+
+        # Selectăm caracteristicile pentru scalare
+        selected_features = ['power', 'delta_power', 'day_of_week', 'hour_of_day',
+                             'lag_1h', 'lag_3h', 'lag_6h', 'lag_12h', 'lag_24h', 'lag_48h',
+                             'hour_sin', 'hour_cos', 'day_sin', 'day_cos', 'minute_cos', 'minute_sin',
+                             'rolling_mean_12h', 'rolling_std_12h', 'rolling_max_12h', 'rolling_mean_24h',
+                             'rolling_min_12h']
+
+        # Aplicăm scalarea DOAR pe setul de train
         self.scaler = MinMaxScaler(feature_range=(0, 10))
+        self.scaler.fit(train_data[selected_features])  # Se antrenează scaler-ul doar pe train
 
-        scaled_features = self.scaler.fit_transform(
-            data[['power', 'delta_power', 'day_of_week', 'hour_of_day',
-                  'lag_1h', 'lag_3h', 'lag_6h', 'lag_12h', 'lag_24h',
-                  'hour_sin', 'hour_cos', 'day_sin', 'day_cos', 'minute_cos', 'minute_sin',
-                  'rolling_mean_12h', 'rolling_std_12h', 'rolling_max_12h', 'rolling_mean_24h', 'rolling_min_12h']]
-        )
+        # Transformăm fiecare subset folosind scaler-ul antrenat pe train
+        train_scaled = self.scaler.transform(train_data[selected_features])
+        val_scaled = self.scaler.transform(val_data[selected_features])
+        test_scaled = self.scaler.transform(test_data[selected_features])
 
-        # Adaugare caracteristici scalate
-        data[['scaled_power', 'scaled_delta_power', 'scaled_day_of_week', 'scaled_hour_of_day',
-              'scaled_lag_1h', 'scaled_lag_3h', 'scaled_lag_6h', 'scaled_lag_12h', 'scaled_lag_24h',
-              'scaled_hour_sin', 'scaled_hour_cos', 'scaled_day_sin', 'scaled_day_cos', 'scaled_minute_cos',
-              'scaled_minute_sin',
-              'scaled_rolling_mean_12h', 'scaled_rolling_std_12h', 'scaled_rolling_max_12h', 'scaled_rolling_mean_24h',
-              'scaled_rolling_min12h']] = scaled_features
+        # Aplicăm create_sequences separat pentru fiecare subset
+        X_train, y_train = self.create_sequences(train_scaled)
+        X_val, y_val = self.create_sequences(val_scaled)
+        X_test, y_test = self.create_sequences(test_scaled)
 
-        # Selectarea caracteristicilor finale pentru antrenare
-        selected_features = ['scaled_power', 'scaled_delta_power', 'scaled_day_of_week', 'scaled_hour_of_day',
-                             'scaled_lag_1h', 'scaled_lag_3h', 'scaled_lag_6h', 'scaled_lag_12h', 'scaled_lag_24h',
-                             'scaled_hour_sin', 'scaled_hour_cos', 'scaled_day_sin', 'scaled_day_cos',
-                             'scaled_minute_cos', 'scaled_minute_sin',
-                             'scaled_rolling_mean_12h', 'scaled_rolling_std_12h', 'scaled_rolling_max_12h',
-                             'scaled_rolling_mean_24h', 'scaled_rolling_min12h']
-
-        X, y = self.create_sequences(data[selected_features].values)
-
-        # Impartirea datelor in antrenare/validare/test
-        train_size = int(0.8 * len(X))
-        val_size = int(0.1 * len(X))
-
-        X_train, y_train = X[:train_size], y[:train_size]
-        X_val, y_val = X[train_size:train_size + val_size], y[train_size:train_size + val_size]
-        X_test, y_test = X[train_size + val_size:], y[train_size + val_size:]
-
-        # Cream DataLoaders
+        # Creăm DataLoaders
         self.train_loader = DataLoader(TimeSeriesDataset(X_train, y_train), batch_size=self.batch_size, shuffle=True)
         self.val_loader = DataLoader(TimeSeriesDataset(X_val, y_val), batch_size=self.batch_size, shuffle=False)
         self.test_loader = DataLoader(TimeSeriesDataset(X_test, y_test), batch_size=self.batch_size, shuffle=False)
@@ -193,7 +187,7 @@ class LSTMAnalyzer:
 
     def predict(self):
         """
-        Genereaza predictii si denormalizeaza rezultatele.
+        Generează predicții și le denormalizează.
         """
         self.model.eval()
         predictions, actuals = [], []
@@ -203,15 +197,19 @@ class LSTMAnalyzer:
                 X_batch = X_batch.to(self.device)
                 y_pred = self.model(X_batch).squeeze().cpu().numpy()
 
+                # Evitam erori legate de valori zero in y_batch
                 y_pred = np.where(y_batch.cpu().numpy() == 0, 0, y_pred)
 
-                # Denormalizare
-                y_pred_expanded = np.zeros((len(y_pred), 20))  # 17 = nr features
-                y_pred_expanded[:, 0] = y_pred
-                y_pred = self.scaler.inverse_transform(y_pred_expanded)[:, 0]
-                y_pred = np.maximum(0, y_pred)
+                # Aplicam denormalizarea
+                y_pred_expanded = np.zeros((len(y_pred), len(self.scaler.feature_names_in_)))  # Pregatim structura
+                y_pred_expanded[:, 0] = y_pred  # Setam doar prima coloana (target)
+                y_pred = self.scaler.inverse_transform(y_pred_expanded)[:, 0]  # Inversam doar prima coloana
 
-                y_batch_expanded = np.zeros((len(y_batch.cpu().numpy()), 20))
+                # Eliminăm valori negative într-un mod mai elegant
+                y_pred = np.clip(y_pred, 0, None)
+
+                # Aplicam aceeaSi denormalizare si pe y_batch
+                y_batch_expanded = np.zeros((len(y_batch.cpu().numpy()), len(self.scaler.feature_names_in_)))
                 y_batch_expanded[:, 0] = y_batch.cpu().numpy()
                 y_batch = self.scaler.inverse_transform(y_batch_expanded)[:, 0]
 
