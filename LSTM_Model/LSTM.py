@@ -6,26 +6,36 @@ class Attention(nn.Module):
     """Mecanism de Atenție pentru LSTM."""
     def __init__(self, hidden_size):
         super(Attention, self).__init__()
-        self.attn = nn.Linear(hidden_size * 2, hidden_size)
+        self.attn = nn.Linear(hidden_size, hidden_size)
         self.v = nn.Linear(hidden_size, 1, bias=False)
 
-    def forward(self, hidden, encoder_outputs):
-        attn_weights = torch.tanh(self.attn(encoder_outputs))
-        attn_weights = self.v(attn_weights).squeeze(2)
-        attn_weights = F.softmax(attn_weights, dim=1)
-        context = torch.sum(attn_weights.unsqueeze(2) * encoder_outputs, dim=1)
+    def forward(self, lstm_out):
+        attn_weights = F.softmax(self.v(torch.tanh(self.attn(lstm_out))), dim=1)
+        context = torch.sum(attn_weights * lstm_out, dim=1)
         return context
 
 class LSTMModel(nn.Module):
-    def __init__(self, input_size, hidden_size, output_size):
+    def __init__(self, input_size, hidden_size, output_size, num_layers=2, dropout=0.3):
         super(LSTMModel, self).__init__()
-        self.lstm = nn.LSTM(input_size, hidden_size, batch_first=True)
+        self.hidden_size = hidden_size
+        self.num_layers = num_layers
+
+        self.lstm = nn.LSTM(input_size, hidden_size, num_layers=num_layers, batch_first=True, dropout=dropout)
+
+        self.attention = Attention(hidden_size)
+
         self.fc1 = nn.Linear(hidden_size, hidden_size // 2)
         self.fc2 = nn.Linear(hidden_size // 2, output_size)
-        self.relu = nn.ReLU()
+
+        self.leaky_relu = nn.LeakyReLU(0.1)
+        self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):
         lstm_out, _ = self.lstm(x)
-        x = self.relu(self.fc1(lstm_out[:, -1, :]))
+
+        context = self.attention(lstm_out)
+
+        x = self.leaky_relu(self.fc1(context))
+        x = self.dropout(x)
         x = self.fc2(x)
         return x

@@ -1,4 +1,5 @@
 from Analysis.DataAnalysis import DataAnalyzer
+from Analysis.PlotAnalysis import PlotAnalyzer
 from Metrics.Metrics import MetricsAnalyzer
 from Analysis.AggregationAnalysis import AggregationAnalyzer
 from LSTM_Model.LSTMAnalysis import LSTMAnalyzer
@@ -18,6 +19,7 @@ if __name__ == "__main__":
     metrics_dir = os.path.join(base_dir, "metrics")
     predictii_dir = os.path.join(base_dir, "predictii")
     models_dir = os.path.join(base_dir, "modele_salvate")
+    predictii_viitor_dir = os.path.join(base_dir, "predictii_viitor")
 
     os.makedirs(aggregated_dir, exist_ok=True)
     os.makedirs(downsampled_dir, exist_ok=True)
@@ -30,6 +32,9 @@ if __name__ == "__main__":
     # Incarcam etichetele si datele
     analyzer.load_labels()
     analyzer.load_data()
+
+    #for channel in channels:
+       # analyzer.plot_acf_pacf(channel)
 
     # Vizualizam datele pentru fiecare canal
     #analyzer.plot_time_series()
@@ -60,11 +65,11 @@ if __name__ == "__main__":
     aggregation_analyzer = AggregationAnalyzer(data_dict=analyzer.data_dict, labels=analyzer.labels)
 
     # Salvam datele agregate si cele cu granularitate redusa in directoarele respective
-    aggregation_analyzer.save_aggregated_data(freq='D', output_dir=aggregated_dir)
+    #aggregation_analyzer.save_aggregated_data(freq='D', output_dir=aggregated_dir)
     aggregation_analyzer.save_downsampled_data(freq='1T', output_dir=downsampled_dir)
 
     # Verificam daca exista fisierul cu datele downsampled pentru canalul 5
-    channel_5_downsampled_path = os.path.join(downsampled_dir, 'channel_5.dat_downsampled_10S.csv')
+    channel_5_downsampled_path = os.path.join(downsampled_dir, 'channel_5.dat_downsampled_1T.csv')
 
     if os.path.exists(channel_5_downsampled_path):
         print(f"✅ File found: {channel_5_downsampled_path}")

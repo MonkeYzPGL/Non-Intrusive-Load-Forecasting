@@ -1,4 +1,5 @@
 import torch
+from imblearn.over_sampling import SMOTE
 from torch.utils.data import DataLoader, Dataset
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -33,20 +34,21 @@ class LSTMAnalyzer:
         print(f"Utlizare dispozivitivul : {torch.cuda.get_device_name(0)}")
 
         # Modelul LSTM
-        self.model = LSTMModel(input_size=17, hidden_size=hidden_size, output_size=1).to(self.device)
+        self.model = LSTMModel(input_size=20, hidden_size=hidden_size, output_size=1).to(self.device)
         self.model.to(self.device)
 
         # Functia de cost si optimizer si scheduler-ul pentru Learning Rate
         self.criterion = nn.SmoothL1Loss() #MAE
         self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=learning_rate)
-        self.scheduler = lr_scheduler.ReduceLROnPlateau(self.optimizer, mode='min', factor=0.5, patience=3, verbose=True)
+        self.scheduler = lr_scheduler.ReduceLROnPlateau(self.optimizer, mode='min', factor=0.5, patience=5, min_lr=0.0005)
 
     def preprocess_data(self):
         # Citirea datelor
         data = pd.read_csv(self.csv_path)
         data['timestamp'] = pd.to_datetime(data['timestamp'])
-        data['day_of_week'] = data['timestamp'].dt.dayofweek
-        data['hour_of_day'] = data['timestamp'].dt.hour
+        data.set_index('timestamp', inplace=True)
+        data['day_of_week'] = data.index.dayofweek
+        data['hour_of_day'] = data.index.hour
         data['power'] = pd.to_numeric(data['power'], errors='coerce').fillna(0)  # Conversie în numeric
 
         # Creare caracteristici suplimentare
@@ -55,37 +57,51 @@ class LSTMAnalyzer:
         data["day_sin"] = np.sin(2 * np.pi * data["day_of_week"] / 7)
         data["day_cos"] = np.cos(2 * np.pi * data["day_of_week"] / 7)
 
+        data['minute_of_hour'] = data.index.minute
+        data["minute_sin"] = np.sin(2 * np.pi * data["minute_of_hour"] / 60)
+        data["minute_cos"] = np.cos(2 * np.pi * data["minute_of_hour"] / 60)
+
         # Aplicare lag-uri
-        lags = [1, 3, 6, 12, 24, 48]
+        lags = [1, 3, 6, 12, 24]
         for lag in lags:
-            data[f'lag_{lag}h'] = data['power'].shift(lag).fillna(0)  # Elimină NaN
+            data[f'lag_{lag}h'] = data['power'].shift(lag)
 
         # Creare caracteristici temporale avansate
-        data['delta_power'] = data['power'].diff().fillna(0)
-        data['rolling_mean_12h'] = data['power'].rolling(window=12, min_periods=1).mean().fillna(0)
-        data['rolling_std_12h'] = data['power'].rolling(window=12, min_periods=1).std().fillna(0)
-        data['rolling_max_12h'] = data['power'].rolling(window=12, min_periods=1).max().fillna(0)
+        data['delta_power'] = data['power'].diff().shift(1)
+        data['rolling_mean_12h'] = data['power'].rolling('12h').mean().shift(1)
+        data['rolling_std_12h'] = data['power'].rolling('12h').std().shift(1)
+        data['rolling_max_12h'] = data['power'].rolling('12h').max().shift(1)
+        data['rolling_mean_24h'] = data['power'].rolling('24h').mean().shift(1)
+        data['rolling_min_12h'] = data['power'].rolling('12h').min().shift(1)
+        data['rolling_median_12h'] = data['power'].rolling('12h').median().shift(1)
+
+        data = data.interpolate(method='linear', limit_direction='both')
 
         # Normalizare (scalare) folosind MinMaxScaler
         self.scaler = MinMaxScaler(feature_range=(0, 10))
+
         scaled_features = self.scaler.fit_transform(
-            data[['power', 'delta_power', 'day_of_week', 'hour_of_day', 'lag_1h', 'lag_3h', 'lag_6h', 'lag_12h',
-                  'lag_24h', 'lag_48h', 'hour_sin', 'hour_cos', 'day_sin', 'day_cos',
-                  'rolling_mean_12h', 'rolling_std_12h', 'rolling_max_12h']]
+            data[['power', 'delta_power', 'day_of_week', 'hour_of_day',
+                  'lag_1h', 'lag_3h', 'lag_6h', 'lag_12h', 'lag_24h',
+                  'hour_sin', 'hour_cos', 'day_sin', 'day_cos', 'minute_cos', 'minute_sin',
+                  'rolling_mean_12h', 'rolling_std_12h', 'rolling_max_12h', 'rolling_mean_24h', 'rolling_min_12h']]
         )
 
         # Adaugare caracteristici scalate
         data[['scaled_power', 'scaled_delta_power', 'scaled_day_of_week', 'scaled_hour_of_day',
-              'scaled_lag_1h', 'scaled_lag_3h', 'scaled_lag_6h', 'scaled_lag_12h', 'scaled_lag_24h', 'scaled_lag_48h',
-              'scaled_hour_sin', 'scaled_hour_cos', 'scaled_day_sin', 'scaled_day_cos',
-              'scaled_rolling_mean_12h', 'scaled_rolling_std_12h', 'scaled_rolling_max_12h']] = scaled_features
+              'scaled_lag_1h', 'scaled_lag_3h', 'scaled_lag_6h', 'scaled_lag_12h', 'scaled_lag_24h',
+              'scaled_hour_sin', 'scaled_hour_cos', 'scaled_day_sin', 'scaled_day_cos', 'scaled_minute_cos',
+              'scaled_minute_sin',
+              'scaled_rolling_mean_12h', 'scaled_rolling_std_12h', 'scaled_rolling_max_12h', 'scaled_rolling_mean_24h',
+              'scaled_rolling_min12h']] = scaled_features
 
         # Selectarea caracteristicilor finale pentru antrenare
         selected_features = ['scaled_power', 'scaled_delta_power', 'scaled_day_of_week', 'scaled_hour_of_day',
                              'scaled_lag_1h', 'scaled_lag_3h', 'scaled_lag_6h', 'scaled_lag_12h', 'scaled_lag_24h',
-                             'scaled_lag_48h',
                              'scaled_hour_sin', 'scaled_hour_cos', 'scaled_day_sin', 'scaled_day_cos',
-                             'scaled_rolling_mean_12h', 'scaled_rolling_std_12h', 'scaled_rolling_max_12h']
+                             'scaled_minute_cos', 'scaled_minute_sin',
+                             'scaled_rolling_mean_12h', 'scaled_rolling_std_12h', 'scaled_rolling_max_12h',
+                             'scaled_rolling_mean_24h', 'scaled_rolling_min12h']
 
         X, y = self.create_sequences(data[selected_features].values)
 
@@ -190,12 +206,12 @@ class LSTMAnalyzer:
                 y_pred = np.where(y_batch.cpu().numpy() == 0, 0, y_pred)
 
                 # Denormalizare
-                y_pred_expanded = np.zeros((len(y_pred), 17))  # 17 = nr features
+                y_pred_expanded = np.zeros((len(y_pred), 20))  # 17 = nr features
                 y_pred_expanded[:, 0] = y_pred
                 y_pred = self.scaler.inverse_transform(y_pred_expanded)[:, 0]
                 y_pred = np.maximum(0, y_pred)
 
-                y_batch_expanded = np.zeros((len(y_batch.cpu().numpy()), 17))
+                y_batch_expanded = np.zeros((len(y_batch.cpu().numpy()), 20))
                 y_batch_expanded[:, 0] = y_batch.cpu().numpy()
                 y_batch = self.scaler.inverse_transform(y_batch_expanded)[:, 0]
 
@@ -206,15 +222,15 @@ class LSTMAnalyzer:
 
     def load_model(self, model_path="saved_lstm_model.pth"):
         """
-        Incarca un model antrenat anterior dacă exista.
+        Incarca un model antrenat anterior daca exista.
         """
         if os.path.exists(model_path):
-            self.model.load_state_dict(torch.load(model_path, map_location=self.device))
+            self.model.load_state_dict(torch.load(model_path, map_location=self.device, weights_only=True))
             self.model.to(self.device)
             self.model.eval()
-            print(f" Model incarcat din {model_path}")
+            print(f"✅ Model incarcat din {model_path}")
         else:
-            print(" Modelul nu exista! Trebuie sa fie antrenat inainte de a putea fi folosit.")
+            print("❌ Modelul nu exista! Trebuie antrenat inainte de a putea fi folosit.")
 
     def predict_future(self, future_steps):
         """
@@ -230,18 +246,29 @@ class LSTMAnalyzer:
             for _ in range(future_steps):
                 y_pred = self.model(last_sequence).squeeze().cpu().numpy()
 
-                # Denormalizare
-                y_pred_expanded = np.zeros((1, 17))
-                y_pred_expanded[:, 0] = y_pred
+                # Obtinem numele caracteristicilor originale folosite de scaler
+                feature_names = self.scaler.feature_names_in_ if hasattr(self.scaler, "feature_names_in_") else [
+                    f"feature_{i}" for i in range(18)]
+
+                # Construim un DataFrame cu numele corecte pentru MinMaxScaler
+                y_pred_expanded = pd.DataFrame(np.zeros((1, 18)), columns=feature_names)
+                y_pred_expanded.iloc[:, 0] = y_pred  # Setam doar prima coloana cu predictia
+
+                # Aplicam denormalizarea
                 y_pred = self.scaler.inverse_transform(y_pred_expanded)[:, 0][0]
 
-                # Salvare predicctie
+                # Salvare predictie
                 predictions.append(y_pred)
 
-                # Construim urmatoarea secventa, eliminand prima valoare si adaugand noua predictie
+                # Construim urmatoarea secventa, eliminand prima valoare si adăugand noua predictie
                 new_input = last_sequence.squeeze(0).cpu().numpy()
-                new_input[:-1] = new_input[1:]  # Shift la stânga
-                new_input[-1, 0] = self.scaler.transform([[y_pred] + [0] * 16])[0][0]  # Adaugare predictie
+
+                # Construim un DataFrame pentru MinMaxScaler
+                new_input_df = pd.DataFrame([[y_pred] + [0] * 17], columns=feature_names)
+
+                # Aplicam scalarea corecta
+                new_input[-1, 0] = self.scaler.transform(new_input_df)[0][0]  # Adaugam predictia scalata
+
                 last_sequence = torch.tensor(new_input, dtype=torch.float32).unsqueeze(0).to(self.device)
 
         return predictions

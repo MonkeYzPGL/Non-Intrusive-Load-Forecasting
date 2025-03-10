@@ -8,6 +8,7 @@ Analizarea distributiei pentru fiecare aparat.
 import os
 import pandas as pd
 import matplotlib.pyplot as plt
+from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
 from tabulate import tabulate
 
 class DataAnalyzer:
@@ -95,3 +96,24 @@ class DataAnalyzer:
             print(f"Metrics saved to {output_file}")
         else:
             print("No metrics to display.")
+
+    def plot_acf_pacf(self, channel):
+        """
+        Ploteaza ACF si PACF pentru un canal specific.
+        :param channel: Numele canalului din data_dict
+        """
+
+        if channel in self.data_dict and self.data_dict[channel] is not None:
+            data = self.data_dict[channel]
+
+            plt.figure(figsize=(12, 5))
+            plt.subplot(1,2,1)
+            plot_acf(data['power'].dropna(), lags = 50, ax=plt.gca())
+
+            plt.subplot(1, 2, 2)
+            plot_pacf(data['power'].dropna(), lags=50, ax=plt.gca())
+            plt.title(f"PACF - {self.labels.get(channel, 'Unknown')}")
+
+            plt.show()
+        else:
+            print(f"Date indisponibile pentru canalul {channel}.")
