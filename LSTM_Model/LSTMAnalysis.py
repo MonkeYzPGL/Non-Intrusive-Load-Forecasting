@@ -24,7 +24,8 @@ class TimeSeriesDataset(Dataset):
         return self.X[idx], self.y[idx]
 
 class LSTMAnalyzer:
-    def __init__(self, csv_path, window_size=35, batch_size=128, hidden_size=512, learning_rate=0.001):
+    def __init__(self, house_dir, csv_path, window_size=35, batch_size=128, hidden_size=512, learning_rate=0.001):
+        self.house_dir = house_dir
         self.csv_path = csv_path
         self.window_size = window_size
         self.batch_size = batch_size
@@ -43,42 +44,62 @@ class LSTMAnalyzer:
         self.scheduler = lr_scheduler.ReduceLROnPlateau(self.optimizer, mode='min', factor=0.5, patience=5, min_lr=0.0005)
 
     def preprocess_data(self):
-        # Citirea datelor
-        data = pd.read_csv(self.csv_path)
-        data['timestamp'] = pd.to_datetime(data['timestamp'])
-        data.set_index('timestamp', inplace=True)
-        data['day_of_week'] = data.index.dayofweek
-        data['hour_of_day'] = data.index.hour
-        data['power'] = pd.to_numeric(data['power'], errors='coerce').fillna(0)  # Conversie în numeric
+        # Citirea tuturor canalelor de date
+        channels = ['channel_1.dat_downsampled_1T.csv', 'channel_2.dat_downsampled_1T.csv',
+                    'channel_3.dat_downsampled_1T.csv', 'channel_4.dat_downsampled_1T.csv',
+                    'channel_5.dat_downsampled_1T.csv']
 
-        # Creare caracteristici suplimentare
+        data_list = []
+
+        for channel in channels:
+            file_path = os.path.join(self.house_dir, channel)
+            if not os.path.exists(file_path):
+                print(f"❌ Fisier lipsa: {file_path}")
+                continue
+            df = pd.read_csv(file_path)
+            df.rename(columns={'power': channel.replace('.dat_downsampled_1T.csv', '')}, inplace=True)
+            df['timestamp'] = pd.to_datetime(df['timestamp'])
+            data_list.append(df)
+
+        # Combinam toate canalele intr-un singur DataFrame
+        data = data_list[0]
+        for i in range(1, len(data_list)):
+            data = data.merge(data_list[i], on='timestamp', how='inner')
+
+        data['power_total'] = data['channel_1']  # Folosim direct consumul real masurat
+        data['delta_power'] = data['power_total'].diff().shift(1)
+
+        # Extragere caracteristici avansate
+        data['day_of_week'] = data['timestamp'].dt.dayofweek
+        data['hour_of_day'] = data['timestamp'].dt.hour
+        data['minute_of_hour'] = data['timestamp'].dt.minute
+
+        # Feature-uri ciclice pentru a modela timpul
         data["hour_sin"] = np.sin(2 * np.pi * data["hour_of_day"] / 24)
         data["hour_cos"] = np.cos(2 * np.pi * data["hour_of_day"] / 24)
         data["day_sin"] = np.sin(2 * np.pi * data["day_of_week"] / 7)
         data["day_cos"] = np.cos(2 * np.pi * data["day_of_week"] / 7)
-
-        data['minute_of_hour'] = data.index.minute
         data["minute_sin"] = np.sin(2 * np.pi * data["minute_of_hour"] / 60)
         data["minute_cos"] = np.cos(2 * np.pi * data["minute_of_hour"] / 60)
 
-        # Aplicare lag-uri
+        #  Creare lag-uri pentru a captura dependente temporale
         lags = [1, 3, 6, 12, 24, 48]
         for lag in lags:
-            data[f'lag_{lag}h'] = data['power'].shift(lag)
+            data[f'lag_{lag}h'] = data['power_total'].shift(lag)
 
-        # Creare caracteristici temporale avansate
-        data['delta_power'] = data['power'].diff().shift(1)
-        data['rolling_mean_12h'] = data['power'].rolling('12h').mean().shift(1)
-        data['rolling_std_12h'] = data['power'].rolling('12h').std().shift(1)
-        data['rolling_max_12h'] = data['power'].rolling('12h').max().shift(1)
-        data['rolling_mean_24h'] = data['power'].rolling('24h').mean().shift(1)
-        data['rolling_min_12h'] = data['power'].rolling('12h').min().shift(1)
-        data['rolling_median_12h'] = data['power'].rolling('12h').median().shift(1)
+        data.set_index('timestamp', inplace=True)  # Setăm indexul la timestamp
 
-        # Umplem valorile lipsă
+        # Medii mobile pentru tendinte pe termen lung
+        data['rolling_mean_12h'] = data['power_total'].rolling('12h').mean().shift(1)
+        data['rolling_std_12h'] = data['power_total'].rolling('12h').std().shift(1)
+        data['rolling_max_12h'] = data['power_total'].rolling('12h').max().shift(1)
+        data['rolling_mean_24h'] = data['power_total'].rolling('24h').mean().shift(1)
+        data['rolling_min_12h'] = data['power_total'].rolling('12h').min().shift(1)
+
+        #Eliminare valori lipsa
         data = data.interpolate(method='linear', limit_direction='both')
 
-        # Împărțirea datelor înainte de scalare
+        # Impartirea in train/val/test
         train_size = int(0.8 * len(data))
         val_size = int(0.1 * len(data))
 
@@ -86,28 +107,26 @@ class LSTMAnalyzer:
         val_data = data.iloc[train_size:train_size + val_size]
         test_data = data.iloc[train_size + val_size:]
 
-        # Selectăm caracteristicile pentru scalare
-        selected_features = ['power', 'delta_power', 'day_of_week', 'hour_of_day',
-                             'lag_1h', 'lag_3h', 'lag_6h', 'lag_12h', 'lag_24h', 'lag_48h',
-                             'hour_sin', 'hour_cos', 'day_sin', 'day_cos', 'minute_cos', 'minute_sin',
-                             'rolling_mean_12h', 'rolling_std_12h', 'rolling_max_12h', 'rolling_mean_24h',
-                             'rolling_min_12h']
+        #  Aplicam scalarea
+        selected_features = [
+            'power_total', 'delta_power', 'day_of_week', 'hour_of_day',
+            'lag_1h', 'lag_3h', 'lag_6h', 'lag_12h', 'lag_24h', 'lag_48h',
+            'hour_sin', 'hour_cos', 'day_sin', 'day_cos', 'minute_sin', 'minute_cos',
+            'rolling_mean_12h', 'rolling_std_12h', 'rolling_max_12h', 'rolling_mean_24h', 'rolling_min_12h']
 
-        # Aplicăm scalarea DOAR pe setul de train
         self.scaler = MinMaxScaler(feature_range=(0, 10))
-        self.scaler.fit(train_data[selected_features])  # Se antrenează scaler-ul doar pe train
+        self.scaler.fit(train_data[selected_features])
 
-        # Transformăm fiecare subset folosind scaler-ul antrenat pe train
         train_scaled = self.scaler.transform(train_data[selected_features])
         val_scaled = self.scaler.transform(val_data[selected_features])
         test_scaled = self.scaler.transform(test_data[selected_features])
 
-        # Aplicăm create_sequences separat pentru fiecare subset
+        #  Generare secvente pentru LSTM
         X_train, y_train = self.create_sequences(train_scaled)
         X_val, y_val = self.create_sequences(val_scaled)
         X_test, y_test = self.create_sequences(test_scaled)
 
-        # Creăm DataLoaders
+        # Creare DataLoaders
         self.train_loader = DataLoader(TimeSeriesDataset(X_train, y_train), batch_size=self.batch_size, shuffle=True)
         self.val_loader = DataLoader(TimeSeriesDataset(X_val, y_val), batch_size=self.batch_size, shuffle=False)
         self.test_loader = DataLoader(TimeSeriesDataset(X_test, y_test), batch_size=self.batch_size, shuffle=False)

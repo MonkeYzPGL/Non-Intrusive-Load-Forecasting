@@ -69,30 +69,27 @@ if __name__ == "__main__":
     aggregation_analyzer.save_downsampled_data(freq='1T', output_dir=downsampled_dir)
 
     # Verificam daca exista fisierul cu datele downsampled pentru canalul 5
-    channel_5_downsampled_path = os.path.join(downsampled_dir, 'channel_4.dat_downsampled_1T.csv')
+    #channel_5_downsampled_path = os.path.join(downsampled_dir, 'channel_4.dat_downsampled_1T.csv')
 
-    if os.path.exists(channel_5_downsampled_path):
-        print(f"✅ File found: {channel_5_downsampled_path}")
+    lstm_analyzer = LSTMAnalyzer(house_dir = downsampled_dir, csv_path=None)
+    lstm_analyzer.preprocess_data()
 
-        # Initializam si rulam modelul LSTM
-        lstm_analyzer = LSTMAnalyzer(csv_path=channel_5_downsampled_path)
-        lstm_analyzer.preprocess_data()
+    # Antrenam modelul
+    lstm_model_path = os.path.join(models_dir, 'lstm_model_total.pth')
+    lstm_analyzer.train(model_path=lstm_model_path)
 
-        # Antrenare model
-        lstm_model_path = os.path.join(models_dir, 'lstm_model_ch3.pth')
-        lstm_analyzer.train(model_path = lstm_model_path)
+    # Generam predictii pentru consumul total
+    predictions, actuals = lstm_analyzer.predict()
 
-        # Generam predictii
-        predictions, actuals = lstm_analyzer.predict()
+    # Salvam predictiile
+    prediction_output_path = os.path.join(predictii_dir, 'power_total_predictions.csv')
+    prediction_df = pd.DataFrame({'Predictions': predictions, 'Actuals': actuals})
+    prediction_df.to_csv(prediction_output_path, index=False)
+    print(f"✅ Predictions saved in: {prediction_output_path}")
 
-        # Salvam predictiile in folderul `predictii/`
-        prediction_output_path = os.path.join(predictii_dir, 'channel_4_predictions.csv')
-        prediction_df = pd.DataFrame({'Predictions': predictions, 'Actuals': actuals})
-        prediction_df.to_csv(prediction_output_path, index=False)
-        print(f"✅ Predictions saved in: {prediction_output_path}")
-
-        # Calculam si salvam metricile de eroare in `metrics/`
-        error_metrics_path = os.path.join(metrics_dir, "channel_4_lstm_error_metrics.csv")
-        error_metrics_analyzer = ErrorMetricsAnalyzer(predictions=predictions, actuals=actuals, output_path=error_metrics_path)
-        error_metrics_analyzer.save_metrics()
-        print(f"✅ Error metrics saved in: {error_metrics_path}")
+    # Calculam și salvam metricile de eroare pentru predictia consumului total
+    error_metrics_path = os.path.join(metrics_dir, "power_total_lstm_error_metrics.csv")
+    error_metrics_analyzer = ErrorMetricsAnalyzer(predictions=predictions, actuals=actuals,
+                                                  output_path=error_metrics_path)
+    error_metrics_analyzer.save_metrics()
+    print(f"✅ Error metrics saved in: {error_metrics_path}")
