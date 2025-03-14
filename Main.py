@@ -6,7 +6,7 @@ from LSTM_Model.LSTMAnalysis import LSTMAnalyzer
 from Metrics.ErrorMetrics import ErrorMetricsAnalyzer
 import os
 import pandas as pd
-
+from Analysis.DeltaCalculation import calculate_delta
 if __name__ == "__main__":
     # Definim directoarele principale
     base_dir = r'C:\Users\elecf\Desktop\Licenta\Date\UK-DALE-disaggregated\house_3'
@@ -67,6 +67,8 @@ if __name__ == "__main__":
     # Salvam datele agregate si cele cu granularitate redusa in directoarele respective
     #aggregation_analyzer.save_aggregated_data(freq='D', output_dir=aggregated_dir)
     aggregation_analyzer.save_downsampled_data(freq='1T', output_dir=downsampled_dir)
+
+    calculate_delta(downsampled_dir)
 
     # Verificam daca exista fisierul cu datele downsampled pentru canalul 5
     #channel_5_downsampled_path = os.path.join(downsampled_dir, 'channel_4.dat_downsampled_1T.csv')
