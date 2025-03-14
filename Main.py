@@ -73,7 +73,7 @@ if __name__ == "__main__":
     # Verificam daca exista fisierul cu datele downsampled pentru canalul 5
     #channel_5_downsampled_path = os.path.join(downsampled_dir, 'channel_4.dat_downsampled_1T.csv')
 
-    lstm_analyzer = LSTMAnalyzer(house_dir = downsampled_dir, csv_path=None)
+    lstm_analyzer = LSTMAnalyzer(house_dir = downsampled_dir)
     lstm_analyzer.preprocess_data()
 
     # Antrenam modelul

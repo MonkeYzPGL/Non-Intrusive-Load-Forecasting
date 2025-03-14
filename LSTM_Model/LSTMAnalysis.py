@@ -1,16 +1,13 @@
-import torch
-from imblearn.over_sampling import SMOTE
-from torch.utils.data import DataLoader, Dataset
-import pandas as pd
-import matplotlib.pyplot as plt
-from LSTM_Model.LSTM import LSTMModel
-import torch.nn as nn
-import numpy as np
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.preprocessing import MinMaxScaler, StandardScaler
-import torch.optim.lr_scheduler as lr_scheduler
-import time
 import os
+import torch
+import pandas as pd
+import numpy as np
+import torch.nn as nn
+import torch.optim.lr_scheduler as lr_scheduler
+from torch.utils.data import DataLoader, Dataset
+from sklearn.preprocessing import MinMaxScaler
+from LSTM_Model.LSTM import LSTMModel
+
 
 class TimeSeriesDataset(Dataset):
     def __init__(self, X, y):
@@ -23,58 +20,61 @@ class TimeSeriesDataset(Dataset):
     def __getitem__(self, idx):
         return self.X[idx], self.y[idx]
 
+
 class LSTMAnalyzer:
-    def __init__(self, house_dir, csv_path, window_size=35, batch_size=128, hidden_size=512, learning_rate=0.001):
+    def __init__(self, house_dir, window_size=35, batch_size=128, hidden_size=512, learning_rate=0.001):
         self.house_dir = house_dir
-        self.csv_path = csv_path
         self.window_size = window_size
         self.batch_size = batch_size
         self.hidden_size = hidden_size
         self.learning_rate = learning_rate
-        self.device =  torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        print(f"Utlizare dispozivitivul : {torch.cuda.get_device_name(0)}")
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
         # Modelul LSTM
-        self.model = LSTMModel(input_size=21, hidden_size=hidden_size, output_size=1).to(self.device)
+        self.model = LSTMModel(input_size=22, hidden_size=hidden_size, output_size=1).to(self.device)
         self.model.to(self.device)
 
-        # Functia de cost si optimizer si scheduler-ul pentru Learning Rate
-        self.criterion = nn.SmoothL1Loss() #MAE
+        # Functia de cost si optimizer
+        self.criterion = nn.SmoothL1Loss()
         self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=learning_rate)
-        self.scheduler = lr_scheduler.ReduceLROnPlateau(self.optimizer, mode='min', factor=0.5, patience=5, min_lr=0.0005)
+        self.scheduler = lr_scheduler.ReduceLROnPlateau(self.optimizer, mode='min', factor=0.5, patience=5,
+                                                        min_lr=0.0005)
 
     def preprocess_data(self):
-        # Citirea tuturor canalelor de date
-        channels = ['channel_1.dat_downsampled_1T.csv', 'channel_2.dat_downsampled_1T.csv',
-                    'channel_3.dat_downsampled_1T.csv', 'channel_4.dat_downsampled_1T.csv',
-                    'channel_5.dat_downsampled_1T.csv']
-
+        # Identificare fisiere din director
+        files = [f for f in os.listdir(self.house_dir) if f.endswith("1T.csv")]
         data_list = []
 
-        for channel in channels:
-            file_path = os.path.join(self.house_dir, channel)
-            if not os.path.exists(file_path):
-                print(f"❌ Fisier lipsa: {file_path}")
-                continue
-            df = pd.read_csv(file_path)
-            df.rename(columns={'power': channel.replace('.dat_downsampled_1T.csv', '')}, inplace=True)
-            df['timestamp'] = pd.to_datetime(df['timestamp'])
+        for file in files:
+            channel_name = file.replace(".dat_downsampled_1T.csv", "")
+            filepath = os.path.join(self.house_dir, file)
+            df = pd.read_csv(filepath, parse_dates=['timestamp'], index_col='timestamp')
+            df.rename(columns={'power': channel_name}, inplace=True)
             data_list.append(df)
 
-        # Combinam toate canalele intr-un singur DataFrame
+        # Verificare si adaugare fisier delta
+        delta_filepath = os.path.join(self.house_dir, "delta_values.csv")
+        if os.path.exists(delta_filepath):
+            df_delta = pd.read_csv(delta_filepath, parse_dates=['timestamp'], index_col='timestamp')
+            df_delta.rename(columns={'delta': 'delta_power'}, inplace=True)
+            data_list.append(df_delta)
+
+        if not data_list:
+            raise ValueError("Nu s-au găsit fișiere valide în director.")
+
+        # Combinarea datelor într-un singur DataFrame
         data = data_list[0]
         for i in range(1, len(data_list)):
             data = data.merge(data_list[i], on='timestamp', how='inner')
 
-        data['power_total'] = data['channel_1']  # Folosim direct consumul real masurat
-        data['delta_power'] = data['power_total'].diff().shift(1)
+        data['power_total'] = data['channel_1']
 
-        # Extragere caracteristici avansate
-        data['day_of_week'] = data['timestamp'].dt.dayofweek
-        data['hour_of_day'] = data['timestamp'].dt.hour
-        data['minute_of_hour'] = data['timestamp'].dt.minute
+        # Extragere caracteristici temporale
+        data['day_of_week'] = data.index.dayofweek
+        data['hour_of_day'] = data.index.hour
+        data['minute_of_hour'] = data.index.minute
 
-        # Feature-uri ciclice pentru a modela timpul
+        # Feature-uri ciclice
         data["hour_sin"] = np.sin(2 * np.pi * data["hour_of_day"] / 24)
         data["hour_cos"] = np.cos(2 * np.pi * data["hour_of_day"] / 24)
         data["day_sin"] = np.sin(2 * np.pi * data["day_of_week"] / 7)
@@ -82,24 +82,22 @@ class LSTMAnalyzer:
         data["minute_sin"] = np.sin(2 * np.pi * data["minute_of_hour"] / 60)
         data["minute_cos"] = np.cos(2 * np.pi * data["minute_of_hour"] / 60)
 
-        #  Creare lag-uri pentru a captura dependente temporale
+        # Creare lag-uri
         lags = [1, 3, 6, 12, 24, 48]
         for lag in lags:
             data[f'lag_{lag}h'] = data['power_total'].shift(lag)
 
-        data.set_index('timestamp', inplace=True)  # Setăm indexul la timestamp
-
-        # Medii mobile pentru tendinte pe termen lung
+        # Aplicare medii mobile
         data['rolling_mean_12h'] = data['power_total'].rolling('12h').mean().shift(1)
         data['rolling_std_12h'] = data['power_total'].rolling('12h').std().shift(1)
         data['rolling_max_12h'] = data['power_total'].rolling('12h').max().shift(1)
         data['rolling_mean_24h'] = data['power_total'].rolling('24h').mean().shift(1)
         data['rolling_min_12h'] = data['power_total'].rolling('12h').min().shift(1)
 
-        #Eliminare valori lipsa
+        # Eliminare valori lipsa
         data = data.interpolate(method='linear', limit_direction='both')
 
-        # Impartirea in train/val/test
+        # Împărțirea în train/val/test
         train_size = int(0.8 * len(data))
         val_size = int(0.1 * len(data))
 
@@ -107,12 +105,8 @@ class LSTMAnalyzer:
         val_data = data.iloc[train_size:train_size + val_size]
         test_data = data.iloc[train_size + val_size:]
 
-        #  Aplicam scalarea
-        selected_features = [
-            'power_total', 'delta_power', 'day_of_week', 'hour_of_day',
-            'lag_1h', 'lag_3h', 'lag_6h', 'lag_12h', 'lag_24h', 'lag_48h',
-            'hour_sin', 'hour_cos', 'day_sin', 'day_cos', 'minute_sin', 'minute_cos',
-            'rolling_mean_12h', 'rolling_std_12h', 'rolling_max_12h', 'rolling_mean_24h', 'rolling_min_12h']
+        # Aplicare scalare
+        selected_features = list(data.columns)
 
         self.scaler = MinMaxScaler(feature_range=(0, 10))
         self.scaler.fit(train_data[selected_features])
@@ -121,7 +115,7 @@ class LSTMAnalyzer:
         val_scaled = self.scaler.transform(val_data[selected_features])
         test_scaled = self.scaler.transform(test_data[selected_features])
 
-        #  Generare secvente pentru LSTM
+        # Generare secvențe pentru LSTM
         X_train, y_train = self.create_sequences(train_scaled)
         X_val, y_val = self.create_sequences(val_scaled)
         X_test, y_test = self.create_sequences(test_scaled)
@@ -132,7 +126,6 @@ class LSTMAnalyzer:
         self.test_loader = DataLoader(TimeSeriesDataset(X_test, y_test), batch_size=self.batch_size, shuffle=False)
 
     def create_sequences(self, data):
-
         sequences = [data[i:i + self.window_size] for i in range(len(data) - self.window_size)]
         labels = [data[i + self.window_size, 0] for i in range(len(data) - self.window_size)]
         return torch.tensor(np.array(sequences), dtype=torch.float32), torch.tensor(np.array(labels), dtype=torch.float32)
