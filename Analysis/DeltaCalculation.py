@@ -9,7 +9,7 @@ def calculate_delta(directory):
     # Citirea datelor
     data = {}
     for file in files:
-        channel_name = file.replace(".dat_downsampled_1T.csv", "")
+        channel_name = file.replace("_downsampled_1T.csv", "")
         filepath = os.path.join(directory, file)
         df = pd.read_csv(filepath, parse_dates=['timestamp'], index_col='timestamp')
         data[channel_name] = df
@@ -23,7 +23,7 @@ def calculate_delta(directory):
     data["delta"] = data["channel_1"] - sum(data[ch] for ch in other_channels)
 
     # Salvare rezultat intr-un fisier CSV
-    output_file = os.path.join(directory, "delta_values.csv")
+    output_file = os.path.join(directory, "delta_values_1T.csv")
     data["delta"].to_csv(output_file)
 
     print(f"Fisierul cu valorile delta a fost salvat: {output_file}")

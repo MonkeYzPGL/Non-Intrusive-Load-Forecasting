@@ -23,15 +23,10 @@ class AggregationAnalyzer:
         return aggregated_data
 
     def downsample_data(self, freq):
-        """
-        Reduce granularitatea datelor prin resampling.
-        :param freq: Frecventa dorita pentru reducerea granularitatii (e.g., '1T' pentru 1 minut).
-        :return: Datele downsampled pentru fiecare canal.
-        """
         downsampled_data = {}
         for channel, data in self.data_dict.items():
             if data is not None:
-                downsampled_data[channel] = data.resample(freq).mean()
+                downsampled_data[channel] = data.resample(freq).mean().interpolate(method='linear')
         return downsampled_data
 
     def save_aggregated_data(self, freq, output_dir):
@@ -42,7 +37,7 @@ class AggregationAnalyzer:
         """
         aggregated_data = self.aggregate_data(freq)
         for channel, data in aggregated_data.items():
-            output_path = os.path.join(output_dir, f"{channel}_aggregated_{freq}.csv")
+            output_path = os.path.join(output_dir, f"{channel.replace('.dat', '')}_aggregated_{freq}.csv")
             data.to_csv(output_path)
             print(f"Aggregated data saved to {output_path}")
 
@@ -56,6 +51,6 @@ class AggregationAnalyzer:
         downsampled_data = self.downsample_data(freq)
         for channel, data in downsampled_data.items():
             data.fillna(0, inplace=True)
-            output_path = os.path.join(output_dir, f"{channel}_downsampled_{freq}.csv")
+            output_path = os.path.join(output_dir, f"{channel.replace('.dat', '')}_downsampled_{freq}.csv")
             data.to_csv(output_path)
             print(f"Downsampled data saved to {output_path}")

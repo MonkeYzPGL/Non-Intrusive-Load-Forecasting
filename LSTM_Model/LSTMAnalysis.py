@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np
 import torch.nn as nn
 import torch.optim.lr_scheduler as lr_scheduler
+from matplotlib import pyplot as plt
 from torch.utils.data import DataLoader, Dataset
 from sklearn.preprocessing import MinMaxScaler
 from LSTM_Model.LSTM import LSTMModel
@@ -30,74 +31,68 @@ class LSTMAnalyzer:
         self.learning_rate = learning_rate
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-        # Modelul LSTM
-        self.model = LSTMModel(input_size=22, hidden_size=hidden_size, output_size=1).to(self.device)
-        self.model.to(self.device)
+        # 📌 Preprocesăm datele înainte de a inițializa modelul
+        self.preprocess_data()
 
-        # Functia de cost si optimizer
+        # 📌 După preprocesare, definim selected_features
+        self.model = LSTMModel(input_size=len(self.selected_features), hidden_size = self.hidden_size, output_size=self.num_channels + 1).to(self.device)
+
+        # 📌 Funcția de cost și optimizer
         self.criterion = nn.SmoothL1Loss()
         self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=learning_rate)
-        self.scheduler = lr_scheduler.ReduceLROnPlateau(self.optimizer, mode='min', factor=0.5, patience=5,
-                                                        min_lr=0.0005)
+        self.scheduler = lr_scheduler.ReduceLROnPlateau(self.optimizer, mode='min', factor=0.5, patience=5, min_lr=0.0005)
 
-    def preprocess_data(self):
-        # Identificare fisiere din director
+    def load_all_channels(self):
+        """Încarcă toate fișierele downsampled la 1T dintr-un director."""
         files = [f for f in os.listdir(self.house_dir) if f.endswith("1T.csv")]
-        data_list = []
+        data_dict = {}
 
         for file in files:
-            channel_name = file.replace(".dat_downsampled_1T.csv", "")
+            channel_name = file.replace("_downsampled_1T.csv", "").replace(".dat", "").replace("delta_values_1T.csv","delta")
             filepath = os.path.join(self.house_dir, file)
             df = pd.read_csv(filepath, parse_dates=['timestamp'], index_col='timestamp')
-            df.rename(columns={'power': channel_name}, inplace=True)
-            data_list.append(df)
+            df = df.rename(columns={"power": channel_name})  # Schimba numele coloanei
+            data_dict[channel_name] = df
 
-        # Verificare si adaugare fisier delta
-        delta_filepath = os.path.join(self.house_dir, "delta_values.csv")
-        if os.path.exists(delta_filepath):
-            df_delta = pd.read_csv(delta_filepath, parse_dates=['timestamp'], index_col='timestamp')
-            df_delta.rename(columns={'delta': 'delta_power'}, inplace=True)
-            data_list.append(df_delta)
+        return data_dict
 
-        if not data_list:
-            raise ValueError("Nu s-au găsit fișiere valide în director.")
-
-        # Combinarea datelor într-un singur DataFrame
-        data = data_list[0]
-        for i in range(1, len(data_list)):
-            data = data.merge(data_list[i], on='timestamp', how='inner')
-
-        data['power_total'] = data['channel_1']
-
-        # Extragere caracteristici temporale
+    def preprocess_data(self):
+        # Citirea datelor
+        data = pd.read_csv(self.csv_path)
+        data['timestamp'] = pd.to_datetime(data['timestamp'])
+        data.set_index('timestamp', inplace=True)
         data['day_of_week'] = data.index.dayofweek
         data['hour_of_day'] = data.index.hour
-        data['minute_of_hour'] = data.index.minute
+        data['power'] = pd.to_numeric(data['power'], errors='coerce').fillna(0)  # Conversie în numeric
 
-        # Feature-uri ciclice
+        # Creare caracteristici suplimentare
         data["hour_sin"] = np.sin(2 * np.pi * data["hour_of_day"] / 24)
         data["hour_cos"] = np.cos(2 * np.pi * data["hour_of_day"] / 24)
         data["day_sin"] = np.sin(2 * np.pi * data["day_of_week"] / 7)
         data["day_cos"] = np.cos(2 * np.pi * data["day_of_week"] / 7)
+
+        data['minute_of_hour'] = data.index.minute
         data["minute_sin"] = np.sin(2 * np.pi * data["minute_of_hour"] / 60)
         data["minute_cos"] = np.cos(2 * np.pi * data["minute_of_hour"] / 60)
 
-        # Creare lag-uri
-        lags = [1, 3, 6, 12, 24, 48]
+        # Aplicare lag-uri
+        lags = [1, 3, 6, 12, 24]
         for lag in lags:
-            data[f'lag_{lag}h'] = data['power_total'].shift(lag)
+            data[f'lag_{lag}h'] = data['power'].shift(lag)
 
-        # Aplicare medii mobile
-        data['rolling_mean_12h'] = data['power_total'].rolling('12h').mean().shift(1)
-        data['rolling_std_12h'] = data['power_total'].rolling('12h').std().shift(1)
-        data['rolling_max_12h'] = data['power_total'].rolling('12h').max().shift(1)
-        data['rolling_mean_24h'] = data['power_total'].rolling('24h').mean().shift(1)
-        data['rolling_min_12h'] = data['power_total'].rolling('12h').min().shift(1)
+        # Creare caracteristici temporale avansate
+        data['delta_power'] = data['power'].diff().shift(1)
+        data['rolling_mean_12h'] = data['power'].rolling('12h').mean().shift(1)
+        data['rolling_std_12h'] = data['power'].rolling('12h').std().shift(1)
+        data['rolling_max_12h'] = data['power'].rolling('12h').max().shift(1)
+        data['rolling_mean_24h'] = data['power'].rolling('24h').mean().shift(1)
+        data['rolling_min_12h'] = data['power'].rolling('12h').min().shift(1)
+        data['rolling_median_12h'] = data['power'].rolling('12h').median().shift(1)
 
-        # Eliminare valori lipsa
+        # Umplem valorile lipsă
         data = data.interpolate(method='linear', limit_direction='both')
 
-        # Împărțirea în train/val/test
+        # Împărțirea datelor înainte de scalare
         train_size = int(0.8 * len(data))
         val_size = int(0.1 * len(data))
 
@@ -105,29 +100,35 @@ class LSTMAnalyzer:
         val_data = data.iloc[train_size:train_size + val_size]
         test_data = data.iloc[train_size + val_size:]
 
-        # Aplicare scalare
-        selected_features = list(data.columns)
+        # Selectăm caracteristicile pentru scalare
+        selected_features = ['power', 'delta_power', 'day_of_week', 'hour_of_day',
+                             'lag_1h', 'lag_3h', 'lag_6h', 'lag_12h', 'lag_24h',
+                             'hour_sin', 'hour_cos', 'day_sin', 'day_cos', 'minute_cos', 'minute_sin',
+                             'rolling_mean_12h', 'rolling_std_12h', 'rolling_max_12h', 'rolling_mean_24h',
+                             'rolling_min_12h', 'rolling_median_12h']
 
+        # Aplicăm scalarea DOAR pe setul de train
         self.scaler = MinMaxScaler(feature_range=(0, 10))
-        self.scaler.fit(train_data[selected_features])
+        self.scaler.fit(train_data[selected_features])  # Se antrenează scaler-ul doar pe train
 
+        # Transformăm fiecare subset folosind scaler-ul antrenat pe train
         train_scaled = self.scaler.transform(train_data[selected_features])
         val_scaled = self.scaler.transform(val_data[selected_features])
         test_scaled = self.scaler.transform(test_data[selected_features])
 
-        # Generare secvențe pentru LSTM
+        # Aplicăm create_sequences separat pentru fiecare subset
         X_train, y_train = self.create_sequences(train_scaled)
         X_val, y_val = self.create_sequences(val_scaled)
         X_test, y_test = self.create_sequences(test_scaled)
 
-        # Creare DataLoaders
+        # Creăm DataLoaders
         self.train_loader = DataLoader(TimeSeriesDataset(X_train, y_train), batch_size=self.batch_size, shuffle=True)
         self.val_loader = DataLoader(TimeSeriesDataset(X_val, y_val), batch_size=self.batch_size, shuffle=False)
         self.test_loader = DataLoader(TimeSeriesDataset(X_test, y_test), batch_size=self.batch_size, shuffle=False)
 
     def create_sequences(self, data):
         sequences = [data[i:i + self.window_size] for i in range(len(data) - self.window_size)]
-        labels = [data[i + self.window_size, 0] for i in range(len(data) - self.window_size)]
+        labels = [data[i + self.window_size, :self.num_channels + 1] for i in range(len(data) - self.window_size)]
         return torch.tensor(np.array(sequences), dtype=torch.float32), torch.tensor(np.array(labels), dtype=torch.float32)
 
     def train(self, epochs=100, patience=5, model_path = None):
@@ -207,23 +208,23 @@ class LSTMAnalyzer:
         with torch.no_grad():
             for X_batch, y_batch in self.test_loader:
                 X_batch = X_batch.to(self.device)
-                y_pred = self.model(X_batch).squeeze().cpu().numpy()
+                y_pred = self.model(X_batch).cpu().numpy()  # Elimină .squeeze() ca să nu reducă dimensiunea
 
-                # Evitam erori legate de valori zero in y_batch
-                y_pred = np.where(y_batch.cpu().numpy() == 0, 0, y_pred)
+                # Verificăm dimensiunile
+                print(f"🔍 y_pred shape: {y_pred.shape}, Expected shape: (batch_size, {self.num_channels})")
 
-                # Aplicam denormalizarea
-                y_pred_expanded = np.zeros((len(y_pred), len(self.scaler.feature_names_in_)))  # Pregatim structura
-                y_pred_expanded[:, 0] = y_pred  # Setam doar prima coloana (target)
-                y_pred = self.scaler.inverse_transform(y_pred_expanded)[:, 0]  # Inversam doar prima coloana
+                # Aplicăm denormalizarea DOAR pe canalele prezise
+                y_pred_expanded = np.zeros((len(y_pred), self.num_channels))  # Nu folosim toate features
+                y_pred_expanded[:, :] = y_pred  # Transferăm valorile corect
+                y_pred = self.scaler.inverse_transform(y_pred_expanded)  # Denormalizăm doar canalele
 
                 # Eliminăm valori negative într-un mod mai elegant
                 y_pred = np.clip(y_pred, 0, None)
 
-                # Aplicam aceeaSi denormalizare si pe y_batch
-                y_batch_expanded = np.zeros((len(y_batch.cpu().numpy()), len(self.scaler.feature_names_in_)))
-                y_batch_expanded[:, 0] = y_batch.cpu().numpy()
-                y_batch = self.scaler.inverse_transform(y_batch_expanded)[:, 0]
+                # Aplicăm aceeași denormalizare și pe y_batch
+                y_batch_expanded = np.zeros((len(y_batch.cpu().numpy()), self.num_channels))
+                y_batch_expanded[:, :] = y_batch.cpu().numpy()
+                y_batch = self.scaler.inverse_transform(y_batch_expanded)
 
                 predictions.extend(y_pred)
                 actuals.extend(y_batch)
@@ -244,41 +245,69 @@ class LSTMAnalyzer:
 
     def predict_future(self, future_steps):
         """
-        Genereaza predicții pentru un numar specific de pasi in viitor.
+        Generează predicții pentru un număr specific de pași în viitor.
         """
         self.model.eval()
         predictions = []
 
         # Folosim ultimele `window_size` valori ca punct de start
-        last_sequence = self.test_loader.dataset.X[-1].unsqueeze(0).to(self.device)
+        last_sequence = self.test_loader.dataset[-1][0].unsqueeze(0).to(self.device)
 
         with torch.no_grad():
             for _ in range(future_steps):
                 y_pred = self.model(last_sequence).squeeze().cpu().numpy()
 
-                # Obtinem numele caracteristicilor originale folosite de scaler
-                feature_names = self.scaler.feature_names_in_ if hasattr(self.scaler, "feature_names_in_") else [
-                    f"feature_{i}" for i in range(18)]
-
                 # Construim un DataFrame cu numele corecte pentru MinMaxScaler
-                y_pred_expanded = pd.DataFrame(np.zeros((1, 18)), columns=feature_names)
-                y_pred_expanded.iloc[:, 0] = y_pred  # Setam doar prima coloana cu predictia
+                feature_names = self.selected_features if hasattr(self, "selected_features") else [f"feature_{i}" for i in range(self.scaler.n_features_in_)]
+                y_pred_expanded = pd.DataFrame(np.zeros((1, len(feature_names))), columns=feature_names)
 
-                # Aplicam denormalizarea
-                y_pred = self.scaler.inverse_transform(y_pred_expanded)[:, 0][0]
+                # Setăm valorile prezise pentru toate canalele
+                y_pred_expanded.iloc[:, :self.num_channels] = y_pred
 
-                # Salvare predictie
+                # Aplicăm denormalizarea corectă pentru toate canalele
+                y_pred = self.scaler.inverse_transform(y_pred_expanded)
+
+                # Salvăm predicția
                 predictions.append(y_pred)
 
-                # Construim urmatoarea secventa, eliminand prima valoare si adăugand noua predictie
+                # Construim următoarea secvență păstrând și caracteristicile temporale
                 new_input = last_sequence.squeeze(0).cpu().numpy()
+                new_input_df = pd.DataFrame(new_input, columns=feature_names)
 
-                # Construim un DataFrame pentru MinMaxScaler
-                new_input_df = pd.DataFrame([[y_pred] + [0] * 17], columns=feature_names)
+                # Actualizăm doar canalele prezise
+                new_input_df.iloc[-1, :self.num_channels] = y_pred
 
-                # Aplicam scalarea corecta
-                new_input[-1, 0] = self.scaler.transform(new_input_df)[0][0]  # Adaugam predictia scalata
+                # Aplicăm scalarea corectă
+                new_input_scaled = self.scaler.transform(new_input_df)
 
-                last_sequence = torch.tensor(new_input, dtype=torch.float32).unsqueeze(0).to(self.device)
+                last_sequence = torch.tensor(new_input_scaled, dtype=torch.float32).unsqueeze(0).to(self.device)
 
         return predictions
+
+    def save_future_predictions(self, future_steps, output_path):
+        future_predictions = self.predict_future(future_steps)
+        future_df = pd.DataFrame(future_predictions, columns=[f"Channel_{i + 1}" for i in range(self.num_channels)])
+        future_df.to_csv(output_path, index=False)
+        print(f"✅ Future predictions saved in: {output_path}")
+
+    def plot_future_predictions(self, future_steps):
+        """
+        Vizualizează predicțiile NILF pentru următoarele `future_steps` minute.
+        """
+        # Generăm predicțiile pentru viitor
+        future_predictions = self.predict_future(future_steps)
+
+        # Creăm un DataFrame pentru vizualizare
+        future_df = pd.DataFrame(future_predictions, columns=[f"Channel_{i + 1}" for i in range(self.num_channels)])
+
+        # Creăm un grafic pentru fiecare canal prezis
+        plt.figure(figsize=(12, 6))
+        for i in range(self.num_channels):
+            plt.plot(future_df.index, future_df.iloc[:, i], label=f"Channel {i + 1}")
+
+        plt.xlabel("Timp (minute în viitor)")
+        plt.ylabel("Putere prezisă (W)")
+        plt.title("Predicții NILF pentru consumul viitor")
+        plt.legend()
+        plt.grid()
+        plt.show()

@@ -10,6 +10,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
 from tabulate import tabulate
+import re
 
 class DataAnalyzer:
     def __init__(self, house_dir, labels_file, channels):
@@ -24,10 +25,21 @@ class DataAnalyzer:
         """Incarcare labels din fisier."""
         try:
             with open(self.labels_file, 'r') as f:
+                channels_dict = {}
+
                 for line in f:
                     if line.strip():
                         channel, label = line.strip().split(' ', 1)
-                        self.labels[f"channel_{channel}.dat"] = label
+                        channel_num = int(re.search(r'\d+', channel).group())  # Extrage numărul canalului
+                        channels_dict[channel_num] = (channel, label)  # Stochează în dicționar
+
+                #  Sortează canalele numeric
+                sorted_labels = dict(sorted(channels_dict.items()))
+
+                #  Reconvertim dicționarul în formatul inițial
+                for channel_num, (channel, label) in sorted_labels.items():
+                    self.labels[f"channel_{channel}.dat"] = label
+
             print("Labels loaded successfully.")
         except Exception as e:
             print(f"Error loading labels: {e}")
@@ -45,6 +57,9 @@ class DataAnalyzer:
 
     def load_data(self):
         """Incarcare data din fisier pentru fiecare canal."""
+        self.channels.sort(key=lambda x: int(re.search(r'\d+', x).group()) if re.search(r'\d+', x) else float('inf'))
+
+
         for channel in self.channels:
             file_path = os.path.join(self.house_dir, channel)
             if os.path.exists(file_path):
