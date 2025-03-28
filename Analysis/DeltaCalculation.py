@@ -4,12 +4,12 @@ import pandas as pd
 
 def calculate_delta(directory):
     # Identificare fisiere cu terminatia "1T.csv" in director
-    files = [f for f in os.listdir(directory) if f.endswith("1T.csv")]
+    files = [f for f in os.listdir(directory) if f.endswith("1H.csv")]
 
     # Citirea datelor
     data = {}
     for file in files:
-        channel_name = file.replace("_downsampled_1T.csv", "")
+        channel_name = file.replace("_downsampled_1H.csv", "")
         filepath = os.path.join(directory, file)
         df = pd.read_csv(filepath, parse_dates=['timestamp'], index_col='timestamp')
         data[channel_name] = df

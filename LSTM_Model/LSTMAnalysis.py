@@ -23,8 +23,8 @@ class TimeSeriesDataset(Dataset):
 
 
 class LSTMAnalyzer:
-    def __init__(self, house_dir, window_size=35, batch_size=128, hidden_size=512, learning_rate=0.001):
-        self.house_dir = house_dir
+    def __init__(self, csv_path, window_size=35, batch_size=128, hidden_size=512, learning_rate=0.001):
+        self.csv_path = csv_path
         self.window_size = window_size
         self.batch_size = batch_size
         self.hidden_size = hidden_size
@@ -35,26 +35,12 @@ class LSTMAnalyzer:
         self.preprocess_data()
 
         # 📌 După preprocesare, definim selected_features
-        self.model = LSTMModel(input_size=len(self.selected_features), hidden_size = self.hidden_size, output_size=self.num_channels + 1).to(self.device)
+        self.model = LSTMModel(input_size=len(self.selected_features), hidden_size = self.hidden_size, output_size=1).to(self.device)
 
         # 📌 Funcția de cost și optimizer
         self.criterion = nn.SmoothL1Loss()
         self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=learning_rate)
         self.scheduler = lr_scheduler.ReduceLROnPlateau(self.optimizer, mode='min', factor=0.5, patience=5, min_lr=0.0005)
-
-    def load_all_channels(self):
-        """Încarcă toate fișierele downsampled la 1T dintr-un director."""
-        files = [f for f in os.listdir(self.house_dir) if f.endswith("1T.csv")]
-        data_dict = {}
-
-        for file in files:
-            channel_name = file.replace("_downsampled_1T.csv", "").replace(".dat", "").replace("delta_values_1T.csv","delta")
-            filepath = os.path.join(self.house_dir, file)
-            df = pd.read_csv(filepath, parse_dates=['timestamp'], index_col='timestamp')
-            df = df.rename(columns={"power": channel_name})  # Schimba numele coloanei
-            data_dict[channel_name] = df
-
-        return data_dict
 
     def preprocess_data(self):
         # Citirea datelor
@@ -101,7 +87,7 @@ class LSTMAnalyzer:
         test_data = data.iloc[train_size + val_size:]
 
         # Selectăm caracteristicile pentru scalare
-        selected_features = ['power', 'delta_power', 'day_of_week', 'hour_of_day',
+        self.selected_features = ['power', 'delta_power', 'day_of_week', 'hour_of_day',
                              'lag_1h', 'lag_3h', 'lag_6h', 'lag_12h', 'lag_24h',
                              'hour_sin', 'hour_cos', 'day_sin', 'day_cos', 'minute_cos', 'minute_sin',
                              'rolling_mean_12h', 'rolling_std_12h', 'rolling_max_12h', 'rolling_mean_24h',
@@ -109,12 +95,12 @@ class LSTMAnalyzer:
 
         # Aplicăm scalarea DOAR pe setul de train
         self.scaler = MinMaxScaler(feature_range=(0, 10))
-        self.scaler.fit(train_data[selected_features])  # Se antrenează scaler-ul doar pe train
+        self.scaler.fit(train_data[self.selected_features])  # Se antreneaza scaler-ul doar pe train
 
         # Transformăm fiecare subset folosind scaler-ul antrenat pe train
-        train_scaled = self.scaler.transform(train_data[selected_features])
-        val_scaled = self.scaler.transform(val_data[selected_features])
-        test_scaled = self.scaler.transform(test_data[selected_features])
+        train_scaled = self.scaler.transform(train_data[self.selected_features])
+        val_scaled = self.scaler.transform(val_data[self.selected_features])
+        test_scaled = self.scaler.transform(test_data[self.selected_features])
 
         # Aplicăm create_sequences separat pentru fiecare subset
         X_train, y_train = self.create_sequences(train_scaled)
@@ -127,9 +113,9 @@ class LSTMAnalyzer:
         self.test_loader = DataLoader(TimeSeriesDataset(X_test, y_test), batch_size=self.batch_size, shuffle=False)
 
     def create_sequences(self, data):
-        sequences = [data[i:i + self.window_size] for i in range(len(data) - self.window_size)]
-        labels = [data[i + self.window_size, :self.num_channels + 1] for i in range(len(data) - self.window_size)]
-        return torch.tensor(np.array(sequences), dtype=torch.float32), torch.tensor(np.array(labels), dtype=torch.float32)
+        seq = [data[i:i + self.window_size] for i in range(len(data) - self.window_size)]
+        labels = [data[i + self.window_size, 0] for i in range(len(data) - self.window_size)]
+        return torch.tensor(np.array(seq), dtype=torch.float32), torch.tensor(np.array(labels), dtype=torch.float32)
 
     def train(self, epochs=100, patience=5, model_path = None):
         """
@@ -208,28 +194,31 @@ class LSTMAnalyzer:
         with torch.no_grad():
             for X_batch, y_batch in self.test_loader:
                 X_batch = X_batch.to(self.device)
-                y_pred = self.model(X_batch).cpu().numpy()  # Elimină .squeeze() ca să nu reducă dimensiunea
+                y_pred = self.model(X_batch).squeeze().cpu().numpy()
+                y_pred = np.atleast_1d(y_pred)  # 👈 Adăugat pentru a preveni eroarea la len()
 
-                # Verificăm dimensiunile
-                print(f"🔍 y_pred shape: {y_pred.shape}, Expected shape: (batch_size, {self.num_channels})")
-
-                # Aplicăm denormalizarea DOAR pe canalele prezise
-                y_pred_expanded = np.zeros((len(y_pred), self.num_channels))  # Nu folosim toate features
-                y_pred_expanded[:, :] = y_pred  # Transferăm valorile corect
-                y_pred = self.scaler.inverse_transform(y_pred_expanded)  # Denormalizăm doar canalele
-
-                # Eliminăm valori negative într-un mod mai elegant
+                # Denormalizare
+                y_pred_exp = np.zeros((len(y_pred), len(self.selected_features)))
+                y_pred_exp[:, 0] = y_pred
+                y_pred = self.scaler.inverse_transform(y_pred_exp)[:, 0]
                 y_pred = np.clip(y_pred, 0, None)
 
-                # Aplicăm aceeași denormalizare și pe y_batch
-                y_batch_expanded = np.zeros((len(y_batch.cpu().numpy()), self.num_channels))
-                y_batch_expanded[:, :] = y_batch.cpu().numpy()
-                y_batch = self.scaler.inverse_transform(y_batch_expanded)
+                y_pred = np.where(y_batch == 0, 0, y_pred)
+
+                y_batch_np = y_batch.cpu().numpy()
+                y_batch_np = np.atleast_1d(y_batch_np)  # 👈 deja ai adăugat corect
+                y_batch_exp = np.zeros_like(y_pred_exp)
+                y_batch_exp[:, 0] = y_batch_np
+                y_batch = self.scaler.inverse_transform(y_batch_exp)[:, 0]
 
                 predictions.extend(y_pred)
                 actuals.extend(y_batch)
 
-        return predictions, actuals
+        df_results = pd.DataFrame({
+            "LSTM_Prediction": predictions,
+            "Actual_Value": actuals
+        })
+        return predictions, actuals, df_results
 
     def load_model(self, model_path="saved_lstm_model.pth"):
         """

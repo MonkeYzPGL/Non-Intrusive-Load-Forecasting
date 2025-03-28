@@ -7,6 +7,7 @@ from Metrics.ErrorMetrics import ErrorMetricsAnalyzer
 import os
 import pandas as pd
 from Analysis.DeltaCalculation import calculate_delta
+from KAN_Model.KANAnalysis import KANAnalyzer
 
 if __name__ == "__main__":
     # 📌 Setăm directorul de bază (modifică-l dacă e necesar)
@@ -69,40 +70,80 @@ if __name__ == "__main__":
 
     #  Salvăm datele agregate și reducem granularitatea
     aggregation_analyzer = AggregationAnalyzer(data_dict=analyzer.data_dict, labels=analyzer.labels)
-    aggregation_analyzer.save_downsampled_data(freq='1T', output_dir=downsampled_dir)
-
+    downsampled_dir = os.path.join(downsampled_dir, "1H")
+    aggregation_analyzer.save_downsampled_data(freq='1h', output_dir=downsampled_dir)
     #  Calculăm diferențele între canale (delta)
     calculate_delta(downsampled_dir)
 
-    #  Inițializăm și preprocesăm datele pentru LSTM
-    lstm_analyzer = LSTMAnalyzer(house_dir=downsampled_dir)
+    predictii_dir_lstm = os.path.join(base_dir, "predictii")
+    predictii_dir_lstm = os.path.join(predictii_dir_lstm, "LSTM")
 
-    #  Antrenăm modelul
-    lstm_model_path = os.path.join(models_dir, 'lstm_model_total.pth')
-    lstm_analyzer.train(model_path=lstm_model_path)
+    metrics_dir_lstm = os.path.join(base_dir, "metrics")
+    metrics_dir_lstm = os.path.join(metrics_dir_lstm, "LSTM")
 
-    #  Generăm predicții pentru consumul total
-    predictions, actuals = lstm_analyzer.predict()
+    """ LSTM """
 
-    #  Salvăm predicțiile
-    prediction_output_path = os.path.join(predictii_dir, 'power_total_predictions.csv')
-    prediction_df = pd.DataFrame(predictions, columns=[f"Channel_{i+1}" for i in range(lstm_analyzer.num_channels)])
-    prediction_df.to_csv(prediction_output_path, index=False)
-    print(f"✅ Predictions saved in: {prediction_output_path}")
+    # for f in os.listdir(downsampled_dir):
+    #     if not f.endswith("1H.csv"):
+    #         continue
+    #
+    #     channel_name = f.replace("_downsampled_1H.csv", "")
+    #     print(f"\n📌 Procesare KAN pentru: {channel_name}")
+    #
+    #     # 🔹 Fisierele pentru acest canal
+    #     channel_csv_path = os.path.join(downsampled_dir, f)
+    #     lstm_model_path = os.path.join(models_dir, f"lstm_model_{channel_name}.pth")
+    #     lstm_prediction_path = os.path.join(predictii_dir_lstm, f"lstm_predictions_{channel_name}.csv")
+    #     lstm_metrics_path = os.path.join(metrics_dir_lstm, f"lstm_metrics_{channel_name}.csv")
+    #
+    #     # 🔹 Initializam si rulam modelul
+    #     lstm_analyzer = LSTMAnalyzer(csv_path=channel_csv_path)
+    #     lstm_analyzer.preprocess_data()
+    #     lstm_analyzer.train(model_path=lstm_model_path)
+    #
+    #     # 🔹 Predictii
+    #     predictions, actuals, df_results = lstm_analyzer.predict()
+    #     df_results.to_csv(lstm_prediction_path, index=False)
+    #     print(f"✅ Predictii salvate: {lstm_prediction_path}")
+    #
+    #     # 🔹 Metrice
+    #     error_analyzer = ErrorMetricsAnalyzer(predictions=predictions, actuals=actuals, output_path=lstm_metrics_path)
+    #     error_analyzer.save_metrics()
+    #     print(f"✅ Metrici salvate: {lstm_metrics_path}")
 
-    #  Calculăm și salvăm metricile de eroare pentru predictii
-    error_metrics_path = os.path.join(metrics_dir, "power_total_lstm_error_metrics.csv")
-    error_metrics_analyzer = ErrorMetricsAnalyzer(predictions=predictions, actuals=actuals, output_path=error_metrics_path)
-    error_metrics_analyzer.save_metrics()
-    print(f"✅ Error metrics saved in: {error_metrics_path}")
+    """ KAN """
+    predictii_dir_kan = os.path.join(base_dir, "predictii")
+    predictii_dir_kan = os.path.join(predictii_dir_kan, "KAN")
 
-    # **🔹 Generăm predicții în viitor pentru NILF**
-    future_steps = 60  #  Prezicem consumul pentru următoarele 60 de minute
-    future_predictions_path = os.path.join(predictii_viitor_dir, 'future_predictions.csv')
-    lstm_analyzer.save_future_predictions(future_steps=future_steps, output_path=future_predictions_path)
-    print(f"✅ Future predictions saved in: {future_predictions_path}")
+    metrics_dir_kan = os.path.join(base_dir, "metrics")
+    metrics_dir_kan = os.path.join(metrics_dir_kan, "KAN")
 
-    # **🔹 Vizualizăm predicțiile NILF**
-    lstm_analyzer.plot_future_predictions(future_steps=future_steps)
+    #  Iteram prin toate canalele
+    for f in os.listdir(downsampled_dir):
+        if not f.endswith("1H.csv"):
+            continue
 
-    print("✅ NILF complet: Modelul a fost antrenat, predicțiile viitoare au fost salvate și vizualizate.")
+        channel_name = f.replace("_downsampled_1H.csv", "")
+        print(f"\n📌 Procesare KAN pentru: {channel_name}")
+
+        # 🔹 Fisierele pentru acest canal
+        channel_csv_path = os.path.join(downsampled_dir, f)
+        kan_model_path = os.path.join(models_dir, f"kan_model_{channel_name}.pth")
+        kan_prediction_path = os.path.join(predictii_dir_kan, f"kan_predictions_{channel_name}.csv")
+        kan_metrics_path = os.path.join(metrics_dir_kan, f"kan_metrics_{channel_name}.csv")
+
+        # 🔹 Initializam si rulam modelul
+        kan_analyzer = KANAnalyzer(csv_path=channel_csv_path)
+        kan_analyzer.preprocess_data()
+        kan_analyzer.train(model_path=kan_model_path)
+
+        # 🔹 Predictii
+        predictions, actuals, df_results = kan_analyzer.predict()
+        df_results.to_csv(kan_prediction_path, index=False)
+        print(f"✅ Predictii salvate: {kan_prediction_path}" )
+
+        # 🔹 Metrice
+        error_analyzer = ErrorMetricsAnalyzer(predictions=predictions, actuals=actuals, output_path=kan_metrics_path)
+        error_analyzer.save_metrics()
+        print(f"✅ Metrici salvate: {kan_metrics_path}")
+
