@@ -112,23 +112,31 @@ class DataAnalyzer:
         else:
             print("No metrics to display.")
 
-    def plot_acf_pacf(self, channel):
+    def plot_acf_pacf(self, file_path):
         """
-        Ploteaza ACF si PACF pentru un canal specific.
-        :param channel: Numele canalului din data_dict
+        Ploteaza ACF si PACF pentru un fisier csv specific.
+        :param file_path: Calea catre fisierul CSV
         """
 
-        if channel in self.data_dict and self.data_dict[channel] is not None:
-            data = self.data_dict[channel]
+        if os.path.exists(file_path):
+            data = pd.read_csv(file_path)
+
+            if 'timestamp' in data.columns:
+                data['timestamp'] = pd.to_datetime(data['timestamp'])
+                data.set_index('timestamp', inplace=True)
 
             plt.figure(figsize=(12, 5))
-            plt.subplot(1,2,1)
-            plot_acf(data['power'].dropna(), lags = 50, ax=plt.gca())
+
+            plt.subplot(1, 2, 1)
+            plot_acf(data['power'].dropna(), lags=50, ax=plt.gca())
+            plt.title('ACF')
 
             plt.subplot(1, 2, 2)
             plot_pacf(data['power'].dropna(), lags=50, ax=plt.gca())
-            plt.title(f"PACF - {self.labels.get(channel, 'Unknown')}")
+            plt.title('PACF')
 
+            plt.tight_layout()
             plt.show()
+
         else:
-            print(f"Date indisponibile pentru canalul {channel}.")
+            print(f"Fisierul nu exista: {file_path}")

@@ -1,3 +1,5 @@
+import torch
+
 from Analysis.DataAnalysis import DataAnalyzer
 from Analysis.PlotAnalysis import PlotAnalyzer
 from Metrics.Metrics import MetricsAnalyzer
@@ -37,12 +39,12 @@ if __name__ == "__main__":
     os.makedirs(predictii_viitor_dir, exist_ok=True)
 
     # 📌 Inițializăm și preprocesăm datele
-    # analyzer = DataAnalyzer(house_dir=base_dir, labels_file=labels_file, channels=channels)
+    #analyzer = DataAnalyzer(house_dir=base_dir, labels_file=labels_file, channels=channels)
     # analyzer.load_labels()
     # analyzer.load_data()
 
     # for channel in channels:
-    # analyzer.plot_acf_pacf(channel)
+    #analyzer.plot_acf_pacf(r'C:\Users\elecf\Desktop\Licenta\Date\UK-DALE-disaggregated\house_1\downsampled\1H\channel_1_downsampled_1H.csv')
 
     # Vizualizam datele pentru fiecare canal
     # analyzer.plot_time_series()
@@ -104,40 +106,55 @@ if __name__ == "__main__":
     #     # 🔹 Predictii
     #     predictions, actuals, df_results = lstm_analyzer.predict()
     #     df_results.to_csv(lstm_prediction_path, index=False)
-    #     print(f"✅ Predictii salvate: {lstm_prediction_path}")
+    #     print(f" Predictii salvate: {lstm_prediction_path}")
     #
     #     # 🔹 Metrice
     #     error_analyzer = ErrorMetricsAnalyzer(predictions=predictions, actuals=actuals, output_path=lstm_metrics_path)
     #     error_analyzer.save_metrics()
-    #     print(f"✅ Metrici salvate: {lstm_metrics_path}")
+    #     print(f" Metrici salvate: {lstm_metrics_path}")
 
 
     """TEST LSTM DOAR PE 1 CANAL"""
     #  Rulare doar pentru channel_1
     channel_name = "channel_1"
+
     channel_csv_path = os.path.join(downsampled_dir, f"{channel_name}_downsampled_1H.csv")
     lstm_model_path = os.path.join(models_dir, f"lstm_model_{channel_name}.pth")
+    lstm_ae_model_path = os.path.join(models_dir,
+                                      f"ae_model_{channel_name}.pth")  # optional, daca vrei sa salvezi si AE
     lstm_prediction_path = os.path.join(predictii_dir_lstm, f"lstm_predictions_{channel_name}.csv")
     lstm_metrics_path = os.path.join(metrics_dir_lstm, f"lstm_metrics_{channel_name}.csv")
 
-    print(f"\n Rulare LSTM doar pentru: {channel_name}")
+    print(f"\n Rulare LSTM + Autoencoder pentru: {channel_name}")
 
+    # Initializare obiect
     lstm_analyzer = LSTMAnalyzer(csv_path=channel_csv_path)
+
+    # Preprocesare
     lstm_analyzer.preprocess_data()
+
+    # Train Model LSTM + Autoencoder
     lstm_analyzer.train(model_path=lstm_model_path)
+
+    # Predictii + Spike detect Autoencoder
     predictions, actuals, df_results = lstm_analyzer.predict()
+
+    lstm_analyzer.plot_predictions_vs_actuals(df_results)
+
+    # Salvare predictii + spike detect
     df_results.to_csv(lstm_prediction_path, index=False)
+    print(f" Predictii salvate: {lstm_prediction_path}")
 
-    print(f"✅ Predictii salvate: {lstm_prediction_path}")
 
-    # Calcul si salvare metrici
+    # Calcul metrici eroare
     error_analyzer = ErrorMetricsAnalyzer(
         predictions=df_results['prediction'],
         actuals=df_results['actual'],
         output_path=lstm_metrics_path
     )
+
     error_analyzer.save_metrics()
-    print(f"✅ Metrici salvate: {lstm_metrics_path}")
+    print(f" Metrici salvate: {lstm_metrics_path}")
 
     """ KAN """
     # predictii_dir_kan = os.path.join(base_dir, "predictii")
@@ -168,10 +185,10 @@ if __name__ == "__main__":
     #     # 🔹 Predictii
     #     predictions, actuals, df_results = kan_analyzer.predict()
     #     df_results.to_csv(kan_prediction_path, index=False)
-    #     print(f"✅ Predictii salvate: {kan_prediction_path}" )
+    #     print(f" Predictii salvate: {kan_prediction_path}" )
     #
     #     # 🔹 Metrice
     #     error_analyzer = ErrorMetricsAnalyzer(predictions=predictions, actuals=actuals, output_path=kan_metrics_path)
     #     error_analyzer.save_metrics()
-    #     print(f"✅ Metrici salvate: {kan_metrics_path}")
+    #     print(f" Metrici salvate: {kan_metrics_path}")
 
