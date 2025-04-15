@@ -125,13 +125,10 @@ if __name__ == "__main__":
     lstm_prediction_path = os.path.join(predictii_dir_lstm, f"lstm_predictions_{channel_name}.csv")
     lstm_metrics_path = os.path.join(metrics_dir_lstm, f"lstm_metrics_{channel_name}.csv")
 
-    print(f"\n Rulare LSTM + Autoencoder pentru: {channel_name}")
+    print(f"\n Rulare LSTM: {channel_name}")
 
     # Initializare obiect
     lstm_analyzer = LSTMAnalyzer(csv_path=channel_csv_path)
-
-    # Preprocesare
-    lstm_analyzer.preprocess_data()
 
     # Train Model LSTM + Autoencoder
     lstm_analyzer.train(model_path=lstm_model_path)
@@ -144,7 +141,6 @@ if __name__ == "__main__":
     # Salvare predictii + spike detect
     df_results.to_csv(lstm_prediction_path, index=False)
     print(f" Predictii salvate: {lstm_prediction_path}")
-
 
     # Calcul metrici eroare
     error_analyzer = ErrorMetricsAnalyzer(

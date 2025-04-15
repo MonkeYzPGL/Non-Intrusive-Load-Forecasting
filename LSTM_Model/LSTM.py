@@ -41,8 +41,8 @@ class LSTMModel(nn.Module):
     def forward(self, x):
         lstm_out, _ = self.lstm(x)
         context = self.attention(lstm_out)
+        context = self.dropout(context)
 
-        # Aplicam Batch Norm doar daca dimensiunea permite
         if context.shape[0] > 1:
             context = self.batch_norm(context)
 

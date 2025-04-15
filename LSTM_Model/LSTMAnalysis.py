@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np
 import torch.nn as nn
 from matplotlib import pyplot as plt
+from statsmodels.tsa.stattools import acf, pacf
 from torch.utils.data import DataLoader, Dataset
 from sklearn.preprocessing import MinMaxScaler
 from LSTM_Model.LSTM import LSTMModel
@@ -55,7 +56,7 @@ class LSTMAnalyzer:
 
         return threshold
 
-    def custom_loss(self, y_pred, y_true, alpha=3):
+    def custom_loss(self, y_pred, y_true, alpha=2.5):
         base_loss = self.criterion(y_pred, y_true)
         spike_mask = (torch.abs(y_true - y_pred) > self.threshold).float()
         spike_loss = (spike_mask * torch.abs(y_true - y_pred)).mean()
@@ -110,12 +111,35 @@ class LSTMAnalyzer:
         data['rolling_min_12h'] = data['power'].rolling('12h').min().shift(1)
         data['rolling_median_12h'] = data['power'].rolling('12h').median().shift(1)
         data['rolling_max_24h'] = data['power'].rolling('24h').max().shift(1)
+        data['rolling_min_24h'] = data['power'].rolling('24h').min().shift(1)
         data['rolling_std_24h'] = data['power'].rolling('24h').std().shift(1)
+        data['rolling_sum_24h'] = data['power'].rolling(24).sum().shift(1)
 
         data["power_diff_24h"] = data["power"] - data["power"].shift(24)
 
-        # Umplem valorile lipsă
+        # Threshold auto pe baza std dev
+        diff_std = data['power_diff_24h'].std()
+        self.spike_event_threshold = 2 * diff_std
+
+        print(f"Threshold auto pentru event_spike/drop: {self.spike_event_threshold}")
+
+        data['event_spike'] = (data['power_diff_24h'] > self.spike_event_threshold).astype(int)
+        data['event_drop'] = (data['power_diff_24h'] < -self.spike_event_threshold).astype(int)
+        data['is_spike_context'] = data['event_spike'].rolling(3, center=True).max().fillna(0)
+
+        data['acf_1h'] = data['power'].rolling(24).apply(
+            lambda x: acf(x, nlags=1, fft=True)[1] if len(x.dropna()) == 24 else 0)
+        data['pacf_1h'] = data['power'].rolling(24).apply(lambda x: pacf(x, nlags=1)[1] if len(x.dropna()) == 24 else 0)
+
+        # Umplem valorile lipsa
         data = data.interpolate(method='linear', limit_direction='both')
+
+        spike_data = data[data['event_spike'] == 1]
+        drop_data = data[data['event_drop'] == 1]
+
+        # Adauga-le de 2x (experimenteaza cu 2 sau 3)
+        data = pd.concat([data, spike_data, drop_data])
+        data = data.sort_index()
 
         # Împărțirea datelor înainte de scalare
         train_size = int(0.8 * len(data))
@@ -132,9 +156,15 @@ class LSTMAnalyzer:
                                   'roc_1h', 'roc_3h', 'roc_6h', 'roc_12h', 'roc_24h', 'zscore_24h', 'spike_flag',
                                   'rolling_skew_24h', 'rolling_kurt_24h', 'grad_3h', 'grad_6h',
                                   'rolling_mean_12h', 'rolling_std_12h', 'rolling_max_12h', 'rolling_mean_24h',
-                                  'rolling_min_12h', 'rolling_max_24h', 'rolling_std_24h', 'power_diff_24h']
+                                  'rolling_min_12h', 'rolling_max_24h', 'rolling_std_24h', 'power_diff_24h',
+                                  'acf_1h', 'pacf_1h', 'event_spike', 'event_drop',
+                                  'rolling_sum_24h',
+                                  'rolling_min_24h',
+                                  'rolling_max_24h',
+                                  'is_spike_context'
+                                  ]
 
-        # Aplicăm scalarea DOAR pe setul de train
+        # Aplicăm scalarea DOAR pe setul de train pt. a evita data leakage
         self.scaler = MinMaxScaler(feature_range=(0, 10))
         self.scaler.fit(train_data[self.selected_features])  # Se antrenează scaler-ul doar pe train
 
@@ -153,7 +183,7 @@ class LSTMAnalyzer:
         self.val_loader = DataLoader(TimeSeriesDataset(X_val, y_val), batch_size=self.batch_size, shuffle=False)
         self.test_loader = DataLoader(TimeSeriesDataset(X_test, y_test), batch_size=self.batch_size, shuffle=False)
 
-        self.threshold = self.calculate_spike_threshold(train_data, method="std", k=3)
+        self.threshold = self.calculate_spike_threshold(train_data, method="std", k=2)
         print(f"Threshold spike auto-calculat: {self.threshold}")
 
     def create_sequences(self, data):
