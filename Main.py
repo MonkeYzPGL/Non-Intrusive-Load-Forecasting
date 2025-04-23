@@ -1,4 +1,5 @@
 import torch
+from matplotlib import pyplot as plt
 
 from Analysis.DataAnalysis import DataAnalyzer
 from Analysis.PlotAnalysis import PlotAnalyzer
@@ -10,6 +11,8 @@ import os
 import pandas as pd
 from Analysis.DeltaCalculation import calculate_delta
 from KAN_Model.KANAnalysis import KANAnalyzer
+from LSTM_Model.LSTMForecast import LSTMForecaster
+
 
 if __name__ == "__main__":
     # 📌 Setăm directorul de bază (modifică-l dacă e necesar)
@@ -30,6 +33,7 @@ if __name__ == "__main__":
     predictii_dir = os.path.join(base_dir, "predictii")
     models_dir = os.path.join(base_dir, "modele_salvate")
     predictii_viitor_dir = os.path.join(base_dir, "predictii_viitor")  # 📌 Director pentru predicții viitoare
+    plots_dir = os.path.join(base_dir, "plots")
 
     os.makedirs(aggregated_dir, exist_ok=True)
     os.makedirs(downsampled_dir, exist_ok=True)
@@ -83,74 +87,94 @@ if __name__ == "__main__":
     metrics_dir_lstm = os.path.join(base_dir, "metrics")
     metrics_dir_lstm = os.path.join(metrics_dir_lstm, "LSTM")
 
-    """ LSTM """
+    """TEST LSTM"""
+    for i in range(1, 2):
+         channel_name = f"channel_{i}"
 
-    # for f in os.listdir(downsampled_dir):
-    #     if not f.endswith("1H.csv"):
-    #         continue
+         channel_csv_path = os.path.join(downsampled_dir, f"{channel_name}_downsampled_1H.csv")
+         lstm_model_path = os.path.join(models_dir, f"lstm_model_{channel_name}.pth")
+         lstm_ae_model_path = os.path.join(models_dir, f"ae_model_{channel_name}.pth")  # optional
+         lstm_prediction_path = os.path.join(predictii_dir_lstm, f"lstm_predictions_{channel_name}.csv")
+         lstm_metrics_path = os.path.join(metrics_dir_lstm, f"lstm_metrics_{channel_name}.csv")
+         plot_save_path = os.path.join(plots_dir, f"plot_{channel_name}.png")
+
+         print(f"\n📌 Rulare LSTM: {channel_name}")
+
+         try:
+             # Initializare obiect
+             lstm_analyzer = LSTMAnalyzer(csv_path=channel_csv_path)
+
+             # Antrenare model
+             lstm_analyzer.train(model_path=lstm_model_path)
+
+             # Predictii
+             predictions, actuals, df_results = lstm_analyzer.predict()
+
+             # Salvare predictii
+             df_results.to_csv(lstm_prediction_path, index=False)
+             print(f"✅ Predictii salvate: {lstm_prediction_path}")
+
+             # Salvare metrici
+             error_analyzer = ErrorMetricsAnalyzer(
+                 predictions=df_results['prediction'],
+                 actuals=df_results['actual'],
+                 output_path=lstm_metrics_path
+             )
+             error_analyzer.save_metrics()
+             print(f"📊 Metrici salvate: {lstm_metrics_path}")
+
+             # Salvare plot
+             plt.figure(figsize=(20, 6))
+             plt.plot(df_results["timestamp"], df_results["actual"], label="Actual", linewidth=1.5)
+             plt.plot(df_results["timestamp"], df_results["prediction"], label="Predicted", linewidth=1.5)
+             plt.xlabel("Timp")
+             plt.ylabel("Consum (Power)")
+             plt.title(f"Predictii LSTM vs Valori Reale - {channel_name}")
+             plt.legend()
+             plt.grid(True)
+             plt.tight_layout()
+             plt.savefig(plot_save_path)
+             plt.close()
+             print(f"🖼️ Plot salvat: {plot_save_path}")
+
+         except Exception as e:
+             print(f"❌ Eroare la {channel_name}: {str(e)}")
+
+    """FORECAST"""
+
+    # for i in range(1, 2):
+    #     channel_name = f"channel_{i}"
     #
-    #     channel_name = f.replace("_downsampled_1H.csv", "")
-    #     print(f"\n📌 Procesare KAN pentru: {channel_name}")
-    #
-    #     # 🔹 Fisierele pentru acest canal
-    #     channel_csv_path = os.path.join(downsampled_dir, f)
+    #     channel_csv_path = os.path.join(downsampled_dir, f"{channel_name}_downsampled_1H.csv")
     #     lstm_model_path = os.path.join(models_dir, f"lstm_model_{channel_name}.pth")
-    #     lstm_prediction_path = os.path.join(predictii_dir_lstm, f"lstm_predictions_{channel_name}.csv")
-    #     lstm_metrics_path = os.path.join(metrics_dir_lstm, f"lstm_metrics_{channel_name}.csv")
+    #     forecast_output_lstm = os.path.join(predictii_viitor_dir, "LSTM")
+    #     forecast_output_lstm = os.path.join(forecast_output_lstm, f"forecast_{channel_name}.csv")
     #
-    #     # 🔹 Initializam si rulam modelul
-    #     lstm_analyzer = LSTMAnalyzer(csv_path=channel_csv_path)
-    #     lstm_analyzer.preprocess_data()
-    #     lstm_analyzer.train(model_path=lstm_model_path)
+    #     print(f"\n📌 Forecast LSTM pentru: {channel_name}")
     #
-    #     # 🔹 Predictii
-    #     predictions, actuals, df_results = lstm_analyzer.predict()
-    #     df_results.to_csv(lstm_prediction_path, index=False)
-    #     print(f" Predictii salvate: {lstm_prediction_path}")
+    #     try:
+    #         # Initializare obiect forecaster
+    #         forecaster = LSTMForecaster(
+    #             model_path=lstm_model_path,
+    #             csv_path=channel_csv_path,
+    #             window_size=168
+    #         )
     #
-    #     # 🔹 Metrice
-    #     error_analyzer = ErrorMetricsAnalyzer(predictions=predictions, actuals=actuals, output_path=lstm_metrics_path)
-    #     error_analyzer.save_metrics()
-    #     print(f" Metrici salvate: {lstm_metrics_path}")
-
-
-    """TEST LSTM DOAR PE 1 CANAL"""
-    #  Rulare doar pentru channel_1
-    channel_name = "channel_1"
-
-    channel_csv_path = os.path.join(downsampled_dir, f"{channel_name}_downsampled_1H.csv")
-    lstm_model_path = os.path.join(models_dir, f"lstm_model_{channel_name}.pth")
-    lstm_ae_model_path = os.path.join(models_dir,
-                                      f"ae_model_{channel_name}.pth")  # optional, daca vrei sa salvezi si AE
-    lstm_prediction_path = os.path.join(predictii_dir_lstm, f"lstm_predictions_{channel_name}.csv")
-    lstm_metrics_path = os.path.join(metrics_dir_lstm, f"lstm_metrics_{channel_name}.csv")
-
-    print(f"\n Rulare LSTM: {channel_name}")
-
-    # Initializare obiect
-    lstm_analyzer = LSTMAnalyzer(csv_path=channel_csv_path)
-
-    # Train Model LSTM + Autoencoder
-    lstm_analyzer.train(model_path=lstm_model_path)
-
-    # Predictii + Spike detect Autoencoder
-    predictions, actuals, df_results = lstm_analyzer.predict()
-
-    lstm_analyzer.plot_predictions_vs_actuals(df_results)
-
-    # Salvare predictii + spike detect
-    df_results.to_csv(lstm_prediction_path, index=False)
-    print(f" Predictii salvate: {lstm_prediction_path}")
-
-    # Calcul metrici eroare
-    error_analyzer = ErrorMetricsAnalyzer(
-        predictions=df_results['prediction'],
-        actuals=df_results['actual'],
-        output_path=lstm_metrics_path
-    )
-
-    error_analyzer.save_metrics()
-    print(f" Metrici salvate: {lstm_metrics_path}")
+    #         # Incarcam ultimele date si setam scalerul + feature-urile
+    #         forecaster.load_recent_data()
+    #
+    #         # Acum stim input_size => incarcam modelul corect
+    #         forecaster.load_model()
+    #
+    #         # Generam forecast pe urmatoarele 48 de ore
+    #         df_forecast = forecaster.forecast(num_steps=168)
+    #
+    #         # Salvam forecast-ul in CSV
+    #         df_forecast.to_csv(forecast_output_lstm, index=False)
+    #         print(f"✅ Forecast salvat: {forecast_output_lstm}")
+    #
+    #     except Exception as e:
+    #         print(f"❌ Eroare la {channel_name}: {str(e)}")
 
     """ KAN """
     # predictii_dir_kan = os.path.join(base_dir, "predictii")
