@@ -4,10 +4,17 @@ import pandas as pd
 import numpy as np
 import torch.nn as nn
 from matplotlib import pyplot as plt
+from statsmodels.tools.sm_exceptions import ValueWarning
 from statsmodels.tsa.stattools import acf, pacf
 from torch.utils.data import DataLoader, Dataset
 from sklearn.preprocessing import MinMaxScaler
 from LSTM_Model.LSTM import LSTMModel
+import warnings
+
+# Ignoram warnings de tip ValueWarning (gen "Matrix is singular")
+warnings.filterwarnings("ignore", category=UserWarning)
+warnings.filterwarnings("ignore", category=ValueWarning)
+
 
 class TimeSeriesDataset(Dataset):
     def __init__(self, X, y):
@@ -22,6 +29,8 @@ class TimeSeriesDataset(Dataset):
 
 class LSTMAnalyzer:
     def __init__(self, csv_path, window_size=168, batch_size=64, hidden_size=512, learning_rate=0.001):
+        torch.manual_seed(42)
+        np.random.seed(42)
         self.csv_path = csv_path
         self.window_size = window_size
         self.batch_size = batch_size
@@ -34,12 +43,12 @@ class LSTMAnalyzer:
         self.model = LSTMModel(
             input_size=len(self.selected_features),
             hidden_size=self.hidden_size,
-            output_size=1
+            output_size=24
         ).to(self.device)
 
         self.criterion = nn.SmoothL1Loss()
-        self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.learning_rate)
-        self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, mode='min', factor=0.9, patience=5, min_lr=0.00005)
+        self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.learning_rate, weight_decay=1e-5)
+        self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, mode='min', factor=0.9, patience=3, min_lr=0.00005)
 
     def calculate_spike_threshold(self,df, method="std", k=3, percentile=95):
         if "power" not in df.columns:
@@ -56,7 +65,7 @@ class LSTMAnalyzer:
 
         return threshold
 
-    def custom_loss(self, y_pred, y_true, alpha=2.5):
+    def custom_loss(self, y_pred, y_true, alpha=3):
         base_loss = self.criterion(y_pred, y_true)
         spike_mask = (torch.abs(y_true - y_pred) > self.threshold).float()
         spike_loss = (spike_mask * torch.abs(y_true - y_pred)).mean()
@@ -69,7 +78,7 @@ class LSTMAnalyzer:
         data.set_index('timestamp', inplace=True)
         data['day_of_week'] = data.index.dayofweek
         data['hour_of_day'] = data.index.hour
-        data['power'] = pd.to_numeric(data['power'], errors='coerce').fillna(0)  # Conversie în numeric
+        data['power'] = pd.to_numeric(data['power'], errors='coerce').fillna(0)
 
         data['is_weekend'] = (data.index.dayofweek >= 5).astype(int)
         data['month'] = data.index.month
@@ -166,14 +175,16 @@ class LSTMAnalyzer:
 
         # Aplicăm scalarea DOAR pe setul de train pt. a evita data leakage
         self.scaler = MinMaxScaler(feature_range=(0, 10))
-        self.scaler.fit(train_data[self.selected_features])  # Se antrenează scaler-ul doar pe train
+        self.scaler.fit(train_data[self.selected_features])
+
+        self.scaler_y = MinMaxScaler(feature_range=(0, 10))
+        self.scaler_y.fit(train_data[['power']])
 
         # Transformăm fiecare subset folosind scaler-ul antrenat pe train
         train_scaled = self.scaler.transform(train_data[self.selected_features])
         val_scaled = self.scaler.transform(val_data[self.selected_features])
         test_scaled = self.scaler.transform(test_data[self.selected_features])
 
-        # Aplicăm create_sequences separat pentru fiecare subset
         X_train, y_train = self.create_sequences(train_scaled)
         X_val, y_val = self.create_sequences(val_scaled)
         X_test, y_test = self.create_sequences(test_scaled)
@@ -183,13 +194,38 @@ class LSTMAnalyzer:
         self.val_loader = DataLoader(TimeSeriesDataset(X_val, y_val), batch_size=self.batch_size, shuffle=False)
         self.test_loader = DataLoader(TimeSeriesDataset(X_test, y_test), batch_size=self.batch_size, shuffle=False)
 
-        self.threshold = self.calculate_spike_threshold(train_data, method="std", k=2)
+        self.threshold = self.calculate_spike_threshold(train_data, method="std", k=1.5)
         print(f"Threshold spike auto-calculat: {self.threshold}")
 
-    def create_sequences(self, data):
-        sequences = [data[i:i + self.window_size] for i in range(len(data) - self.window_size)]
-        labels = [data[i + self.window_size, 0] for i in range(len(data) - self.window_size)]
-        return torch.tensor(np.array(sequences), dtype=torch.float32), torch.tensor(np.array(labels), dtype=torch.float32)
+        self.test_data = test_data.copy()
+
+        # corr_features = ['power', 'delta_power', 'day_of_week', 'hour_of_day', 'is_weekend', 'month', 'season',
+        #     'lag_1h', 'lag_6h', 'lag_12h', 'lag_24h', 'lag_48h', 'lag_168h',
+        #     'hour_sin', 'day_sin',
+        #     'roc_6h', 'roc_12h', 'roc_24h',
+        #     'zscore_24h', 'spike_flag',
+        #     'rolling_skew_24h', 'rolling_kurt_24h', 'grad_3h', 'grad_6h',
+        #     'rolling_mean_24h', 'rolling_std_24h',
+        #     'rolling_min_24h', 'rolling_max_24h',
+        #     'power_diff_24h',
+        #     'acf_1h', 'pacf_1h', 'event_spike', 'event_drop',
+        #     'is_spike_context']
+        #
+        # # Compute the correlation matrix
+        # corr_matrix = data[corr_features].corr()
+        #
+        # # Plot the correlation matrix as a heatmap
+        # plt.figure(figsize=(12, 10))
+        # sns.heatmap(corr_matrix, annot=False, cmap='coolwarm', fmt=".2f")
+        # plt.title("Correlation Matrix of Engineered Features")
+        # plt.show()
+
+    def create_sequences(self, data, horizon=24):
+        X, y = [], []
+        for i in range(len(data) - self.window_size - horizon):
+            X.append(data[i:i + self.window_size])
+            y.append(data[i + self.window_size: i + self.window_size + horizon, 0])
+        return torch.tensor(np.array(X), dtype=torch.float32), torch.tensor(np.array(y), dtype=torch.float32)
 
     def train(self, epochs=100, patience=10, model_path=None):
         train_losses = []
@@ -205,7 +241,7 @@ class LSTMAnalyzer:
                 X_batch, y_batch = X_batch.to(self.device), y_batch.to(self.device)
                 self.optimizer.zero_grad()
                 y_pred = self.model(X_batch)
-                loss = self.custom_loss(y_pred.squeeze(), y_batch)
+                loss = self.custom_loss(y_pred, y_batch)
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=5)
                 self.optimizer.step()
@@ -217,7 +253,7 @@ class LSTMAnalyzer:
                 for X_batch, y_batch in self.val_loader:
                     X_batch, y_batch = X_batch.to(self.device), y_batch.to(self.device)
                     y_pred = self.model(X_batch)
-                    val_loss += self.custom_loss(y_pred.squeeze(), y_batch).item()
+                    val_loss += self.custom_loss(y_pred, y_batch).item()
 
             train_losses.append(train_loss / len(self.train_loader))
             val_losses.append(val_loss / len(self.val_loader))
@@ -254,62 +290,38 @@ class LSTMAnalyzer:
 
     def predict(self):
         self.model.eval()
-        predictions, actuals = [], []
-
-        # Incarcam timestamp-urile pentru sincronizare cu predictiile
-        original_data = pd.read_csv(self.csv_path)
-        original_data['timestamp'] = pd.to_datetime(original_data['timestamp'])
-        original_data = original_data.interpolate(method='linear', limit_direction='both')
-        timestamps = original_data['timestamp'].iloc[self.window_size:]
+        rows = []
 
         with torch.no_grad():
-            for X_batch, y_batch in self.test_loader:
-                X_batch, y_batch = X_batch.to(self.device), y_batch.to(self.device)
-                X_batch = X_batch.float()
+            for batch_idx, (X_batch, y_batch) in enumerate(self.test_loader):
+                X_batch = X_batch.to(self.device).float()
+                y_batch = y_batch.to(self.device)
 
-                y_pred = self.model(X_batch).squeeze().cpu().numpy()
-                y_batch = y_batch.cpu().numpy()
+                # Predictii
+                y_pred = self.model(X_batch).cpu().numpy()  # (batch, 24)
+                y_batch = y_batch.cpu().numpy()  # (batch, 24)
 
-                # Pregatim inversarea scaler-ului pentru predictii
-                zeros_pred = np.zeros((len(y_pred), len(self.selected_features)))
-                zeros_pred[:, 0] = y_pred  # doar target log_power
-                y_pred = self.scaler.inverse_transform(zeros_pred)[:, 0]
-                y_pred = np.clip(y_pred, 0, None)
+                for i in range(len(y_pred)):
+                    pred_fill = np.zeros((24, len(self.selected_features)))
+                    actual_fill = np.zeros((24, len(self.selected_features)))
 
-                # Pregatim inversarea scaler-ului pentru valorile reale
-                zeros_actual = np.zeros((len(y_batch), len(self.selected_features)))
-                zeros_actual[:, 0] = y_batch  # doar target log_power
-                y_batch = self.scaler.inverse_transform(zeros_actual)[:, 0]
+                    pred_fill[:, 0] = y_pred[i]
+                    actual_fill[:, 0] = y_batch[i]
 
-                predictions.extend(y_pred.tolist())
-                actuals.extend(y_batch.tolist())
+                    y_pred_inv = self.scaler.inverse_transform(pred_fill)[:, 0]
+                    y_pred_inv = np.clip(y_pred_inv, 0, None)
+                    y_actual_inv = self.scaler.inverse_transform(actual_fill)[:, 0]
 
-        df_results = pd.DataFrame({
-            "timestamp": timestamps[:len(predictions)],
-            "prediction": predictions,
-            "actual": actuals
-        })
+                    timestamp = self.test_data.index[self.window_size + batch_idx * self.batch_size + i]
 
-        # Optional: smoothing pentru raportare/vizualizare
-        df_results['prediction_smooth'] = df_results['prediction'].rolling(window=3, center=True).mean().fillna(
-            method='bfill').fillna(method='ffill')
+                    row = {
+                        "timestamp": timestamp,
+                        "prediction": y_pred_inv[0],  # prima ora
+                        "actual": y_actual_inv[0]  # prima ora
+                    }
 
-        return predictions, actuals, df_results
+                    rows.append(row)
 
-    def plot_predictions_vs_actuals(self, df_results):
-        plt.figure(figsize=(20, 6))
+        df_results = pd.DataFrame(rows)
 
-        # Plot actual values
-        plt.plot(df_results['timestamp'], df_results['actual'], label='Actual', linewidth=1.5)
-
-        # Plot predicted values
-        plt.plot(df_results['timestamp'], df_results['prediction'], label='Predicted', linewidth=1.5)
-
-
-        plt.xlabel('Timp')
-        plt.ylabel('Consum (Power)')
-        plt.title('Predictii LSTM vs Valori Reale')
-        plt.legend()
-        plt.grid(True)
-        plt.tight_layout()
-        plt.show()
+        return df_results

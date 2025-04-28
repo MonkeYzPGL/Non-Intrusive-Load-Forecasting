@@ -29,7 +29,7 @@ class LSTMForecaster:
         self.model = LSTMModel(
             input_size=len(self.selected_features),
             hidden_size=self.hidden_size,
-            output_size=1
+            output_size=24
         ).to(self.device)
 
         if not os.path.exists(self.model_path):
@@ -137,14 +137,16 @@ class LSTMForecaster:
         # Lista de feature-uri folosite (la fel ca in training)
         self.selected_features = [
             'power', 'delta_power', 'day_of_week', 'hour_of_day', 'is_weekend', 'month', 'season',
-            'lag_1h', 'lag_2h', 'lag_3h', 'lag_6h', 'lag_12h', 'lag_24h', 'lag_48h', 'lag_168h',
-            'hour_sin', 'hour_cos', 'day_sin', 'day_cos',
-            'roc_1h', 'roc_3h', 'roc_6h', 'roc_12h', 'roc_24h', 'zscore_24h', 'spike_flag',
+            'lag_1h', 'lag_6h', 'lag_12h', 'lag_24h', 'lag_48h', 'lag_168h',
+            'hour_sin', 'day_sin',
+            'roc_6h', 'roc_12h', 'roc_24h',
+            'zscore_24h', 'spike_flag',
             'rolling_skew_24h', 'rolling_kurt_24h', 'grad_3h', 'grad_6h',
-            'rolling_mean_12h', 'rolling_std_12h', 'rolling_max_12h', 'rolling_mean_24h',
-            'rolling_min_12h', 'rolling_max_24h', 'rolling_std_24h', 'power_diff_24h',
+            'rolling_mean_24h', 'rolling_std_24h',
+            'rolling_min_24h', 'rolling_max_24h',
+            'power_diff_24h',
             'acf_1h', 'pacf_1h', 'event_spike', 'event_drop',
-            'rolling_sum_24h', 'rolling_min_24h', 'rolling_max_24h', 'is_spike_context', 'rolling_mean_7d'
+            'is_spike_context'
         ]
 
         # Init scaler si scalare context
@@ -153,33 +155,51 @@ class LSTMForecaster:
 
         print(f" Context de forecast pregatit din ultimele {self.window_size} valori.")
 
-    def forecast(self):
+    def forecast(self, forecast_hours):
         """
-        Genereaza forecast pentru urmatoarele 24 ore (multi-step, fara bucla autoregresiva).
+        Genereaza forecast pentru forecast_hours ore folosind rolling context.
         """
         forecast_results = []
+        current_context = self.context_df.copy()
 
-        # luam fereastra curenta ca input
-        input_features = self.context_df[self.selected_features].copy()
-        input_scaled = self.scaler.transform(input_features)
+        steps = forecast_hours // 24
+        if forecast_hours % 24 != 0:
+            steps += 1  # daca nu e multiplu de 24, mai facem un pas suplimentar
 
-        input_tensor = torch.tensor(input_scaled, dtype=torch.float32).unsqueeze(0).to(
-            self.device)  # (1, window_size, input_size)
-
-        # Predictie multi-output
         with torch.no_grad():
-            predictions = self.model(input_tensor).cpu().numpy().flatten()  # (24,)
+            for step in range(steps):
+                # Pregatim input pentru model
+                input_features = current_context[self.selected_features].copy()
+                input_scaled = self.scaler.transform(input_features)
 
-        # Denormalizam
-        for i, prediction in enumerate(predictions):
-            pred_array = np.zeros((1, len(self.selected_features)))
-            pred_array[0][self.selected_features.index('power')] = prediction
-            prediction_real = self.scaler.inverse_transform(pred_array)[0][self.selected_features.index('power')]
+                input_tensor = torch.tensor(input_scaled, dtype=torch.float32).unsqueeze(0).to(self.device)
 
-            forecast_timestamp = self.context_df.index[-1] + timedelta(hours=i + 1)
-            forecast_results.append((forecast_timestamp, prediction_real))
+                # Predictie
+                predictions = self.model(input_tensor).cpu().numpy().flatten()  # (24,)
+
+                for i in range(24):
+                    if len(forecast_results) >= forecast_hours:
+                        break  # ne oprim cand ajungem la forecast_hours
+
+                    pred_array = np.zeros((1, len(self.selected_features)))
+                    pred_array[0][self.selected_features.index('power')] = predictions[i]
+                    prediction_real = self.scaler.inverse_transform(pred_array)[0][
+                        self.selected_features.index('power')]
+
+                    # Ne asiguram ca predictia nu este negativa
+                    prediction_real = max(prediction_real, 0)
+
+                    forecast_timestamp = current_context.index[-1] + timedelta(hours=1)
+                    forecast_results.append((forecast_timestamp, prediction_real))
+
+                    # Actualizam contextul pentru pasul urmator
+                    new_row = current_context.iloc[-1].copy()
+                    new_row['power'] = prediction_real
+                    new_row.name = forecast_timestamp  # corectam timestampul
+
+                    current_context = pd.concat([current_context, pd.DataFrame([new_row])])
+                    current_context = current_context.tail(self.window_size)  # mentinem marimea ferestrei
 
         df_forecast = pd.DataFrame(forecast_results, columns=["timestamp", "predicted_power"])
         return df_forecast
-
 
