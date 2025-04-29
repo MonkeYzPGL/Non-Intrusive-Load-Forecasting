@@ -137,16 +137,17 @@ class LSTMForecaster:
         # Lista de feature-uri folosite (la fel ca in training)
         self.selected_features = [
             'power', 'delta_power', 'day_of_week', 'hour_of_day', 'is_weekend', 'month', 'season',
-            'lag_1h', 'lag_6h', 'lag_12h', 'lag_24h', 'lag_48h', 'lag_168h',
-            'hour_sin', 'day_sin',
-            'roc_6h', 'roc_12h', 'roc_24h',
-            'zscore_24h', 'spike_flag',
-            'rolling_skew_24h', 'rolling_kurt_24h', 'grad_3h', 'grad_6h',
-            'rolling_mean_24h', 'rolling_std_24h',
-            'rolling_min_24h', 'rolling_max_24h',
-            'power_diff_24h',
-            'acf_1h', 'pacf_1h', 'event_spike', 'event_drop',
-            'is_spike_context'
+                                  'lag_1h', 'lag_2h', 'lag_3h', 'lag_6h', 'lag_12h', 'lag_24h', 'lag_48h', 'lag_168h',
+                                  'hour_sin', 'hour_cos', 'day_sin', 'day_cos',
+                                  'roc_1h', 'roc_3h', 'roc_6h', 'roc_12h', 'roc_24h', 'zscore_24h', 'spike_flag',
+                                  'rolling_skew_24h', 'rolling_kurt_24h', 'grad_3h', 'grad_6h',
+                                  'rolling_mean_12h', 'rolling_std_12h', 'rolling_max_12h', 'rolling_mean_24h',
+                                  'rolling_min_12h', 'rolling_max_24h', 'rolling_std_24h', 'power_diff_24h',
+                                  'acf_1h', 'pacf_1h', 'event_spike', 'event_drop',
+                                  'rolling_sum_24h',
+                                  'rolling_min_24h',
+                                  'rolling_max_24h',
+                                  'is_spike_context'
         ]
 
         # Init scaler si scalare context
@@ -155,51 +156,54 @@ class LSTMForecaster:
 
         print(f" Context de forecast pregatit din ultimele {self.window_size} valori.")
 
-    def forecast(self, forecast_hours):
+    def test_on_day(self, target_day):
         """
-        Genereaza forecast pentru forecast_hours ore folosind rolling context.
+        Testeaza modelul pe o zi existenta din dataset.
+        target_day: string format 'YYYY-MM-DD'
         """
-        forecast_results = []
-        current_context = self.context_df.copy()
+        df = pd.read_csv(self.csv_path)
+        df['timestamp'] = pd.to_datetime(df['timestamp'])
+        df.set_index('timestamp', inplace=True)
+        df['power'] = pd.to_numeric(df['power'], errors='coerce').fillna(0)
 
-        steps = forecast_hours // 24
-        if forecast_hours % 24 != 0:
-            steps += 1  # daca nu e multiplu de 24, mai facem un pas suplimentar
+        df = self.generate_features(df)
 
+        min_date = df.index.min().date()
+        max_date = df.index.max().date()
+        target_date = pd.to_datetime(target_day).date()
+
+        if target_date < min_date or target_date > max_date:
+            raise ValueError(
+                f"Data selectata ({target_day}) este in afara intervalului datasetului ({min_date} - {max_date}).")
+
+        # Selectam ziua dorita
+        day_df = df.loc[target_day]
+        if len(day_df) != 24:
+            raise ValueError(f"Ziua {target_day} nu are 24 de puncte de date (posibil lipsuri in date).")
+
+        input_features = day_df[self.selected_features].copy()
+        input_scaled = self.scaler.transform(input_features)
+
+        input_tensor = torch.tensor(input_scaled, dtype=torch.float32).unsqueeze(0).to(self.device)
+
+        # Predictie
         with torch.no_grad():
-            for step in range(steps):
-                # Pregatim input pentru model
-                input_features = current_context[self.selected_features].copy()
-                input_scaled = self.scaler.transform(input_features)
+            predictions = self.model(input_tensor).cpu().numpy().flatten()
 
-                input_tensor = torch.tensor(input_scaled, dtype=torch.float32).unsqueeze(0).to(self.device)
+        # Denormalizare
+        predictions_real = []
+        for pred in predictions:
+            pred_array = np.zeros((1, len(self.selected_features)))
+            pred_array[0][self.selected_features.index('power')] = pred
+            prediction_real = self.scaler.inverse_transform(pred_array)[0][self.selected_features.index('power')]
+            prediction_real = max(prediction_real, 0)
+            predictions_real.append(prediction_real)
 
-                # Predictie
-                predictions = self.model(input_tensor).cpu().numpy().flatten()  # (24,)
+        # Organizare rezultate
+        df_results = pd.DataFrame({
+            "timestamp": day_df.index,
+            "actual_power": day_df['power'].values,
+            "predicted_power": predictions_real
+        })
 
-                for i in range(24):
-                    if len(forecast_results) >= forecast_hours:
-                        break  # ne oprim cand ajungem la forecast_hours
-
-                    pred_array = np.zeros((1, len(self.selected_features)))
-                    pred_array[0][self.selected_features.index('power')] = predictions[i]
-                    prediction_real = self.scaler.inverse_transform(pred_array)[0][
-                        self.selected_features.index('power')]
-
-                    # Ne asiguram ca predictia nu este negativa
-                    prediction_real = max(prediction_real, 0)
-
-                    forecast_timestamp = current_context.index[-1] + timedelta(hours=1)
-                    forecast_results.append((forecast_timestamp, prediction_real))
-
-                    # Actualizam contextul pentru pasul urmator
-                    new_row = current_context.iloc[-1].copy()
-                    new_row['power'] = prediction_real
-                    new_row.name = forecast_timestamp  # corectam timestampul
-
-                    current_context = pd.concat([current_context, pd.DataFrame([new_row])])
-                    current_context = current_context.tail(self.window_size)  # mentinem marimea ferestrei
-
-        df_forecast = pd.DataFrame(forecast_results, columns=["timestamp", "predicted_power"])
-        return df_forecast
-
+        return df_results
