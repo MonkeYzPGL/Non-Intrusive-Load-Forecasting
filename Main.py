@@ -1,5 +1,7 @@
+import numpy as np
 import torch
 from matplotlib import pyplot as plt
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 
 from Analysis.DataAnalysis import DataAnalyzer
 from Analysis.PlotAnalysis import PlotAnalyzer
@@ -88,119 +90,114 @@ if __name__ == "__main__":
     metrics_dir_lstm = os.path.join(metrics_dir_lstm, "LSTM")
 
     """TEST LSTM"""
-    # for i in range(2, 4):
-    #      channel_name = f"channel_{i}"
-    #
-    #      channel_csv_path = os.path.join(downsampled_dir, f"{channel_name}_downsampled_1H.csv")
-    #      lstm_model_path = os.path.join(models_dir, f"lstm_model_{channel_name}.pth")
-    #      lstm_prediction_path = os.path.join(predictii_dir_lstm, f"lstm_predictions_{channel_name}.csv")
-    #      lstm_metrics_path = os.path.join(metrics_dir_lstm, f"lstm_metrics_{channel_name}.csv")
-    #      plot_save_path = os.path.join(plots_dir, f"plot_{channel_name}.png")
-    #
-    #      print(f"\n📌 Rulare LSTM: {channel_name}")
-    #
-    #      try:
-    #          # Initializare obiect
-    #          lstm_analyzer = LSTMAnalyzer(csv_path=channel_csv_path)
-    #
-    #          # Antrenare model
-    #          lstm_analyzer.train(model_path=lstm_model_path)
-    #
-    #          # Predictii
-    #          df_results = lstm_analyzer.predict()
-    #
-    #          # Salvare predictii
-    #          df_results.to_csv(lstm_prediction_path, index=False)
-    #          print(f"✅ Predictii salvate: {lstm_prediction_path}")
-    #
-    #          metrics_analyzer = ErrorMetricsAnalyzer(
-    #              predictions=df_results["prediction"].values,
-    #              actuals=df_results["actual"].values,
-    #              output_path=lstm_metrics_path,
-    #          )
-    #          metrics_analyzer.save_metrics()
-    #
-    #          print(f"📊 Metrici salvate: {lstm_metrics_path}")
-    #
-    #          # Salvare plot
-    #          plt.figure(figsize=(20, 6))
-    #          plt.plot(df_results["timestamp"], df_results["actual"], label="Actual", linewidth=1.5)
-    #          plt.plot(df_results["timestamp"], df_results["prediction"], label="Predicted", linewidth=1.5)
-    #          plt.xlabel("Timp")
-    #          plt.ylabel("Consum (Power)")
-    #          plt.title(f"Predictii LSTM vs Valori Reale - {channel_name}")
-    #          plt.legend()
-    #          plt.grid(True)
-    #          plt.tight_layout()
-    #          plt.savefig(plot_save_path)
-    #          plt.close()
-    #
-    #          print(f"🖼️ Plot salvat: {plot_save_path}")
-    #
-    #      except Exception as e:
-    #          print(f"❌ Eroare la {channel_name}: {str(e)}")
+    for i in range(21, 23):
+         channel_name = f"channel_{i}"
+
+         channel_csv_path = os.path.join(downsampled_dir, f"{channel_name}_downsampled_1H.csv")
+         lstm_model_path = os.path.join(models_dir, f"lstm_model_{channel_name}.pth")
+         lstm_prediction_path = os.path.join(predictii_dir_lstm, f"lstm_predictions_{channel_name}.csv")
+         lstm_metrics_path = os.path.join(metrics_dir_lstm, f"lstm_metrics_{channel_name}.csv")
+         plot_save_path = os.path.join(plots_dir, f"plot_{channel_name}.png")
+
+         print(f"\n📌 Rulare LSTM: {channel_name}")
+
+         try:
+             # Initializare obiect
+             lstm_analyzer = LSTMAnalyzer(csv_path=channel_csv_path)
+
+             # Antrenare model
+             lstm_analyzer.train(model_path=lstm_model_path)
+
+             # Predictii
+             df_results = lstm_analyzer.predict()
+
+             # Salvare predictii
+             df_results.to_csv(lstm_prediction_path, index=False)
+             print(f"✅ Predictii salvate: {lstm_prediction_path}")
+
+             metrics_analyzer = ErrorMetricsAnalyzer(
+                 predictions=df_results["prediction"].values,
+                 actuals=df_results["actual"].values,
+                 output_path=lstm_metrics_path,
+             )
+             metrics_analyzer.save_metrics()
+
+             print(f"📊 Metrici salvate: {lstm_metrics_path}")
+
+             # Salvare plot
+             plt.figure(figsize=(20, 6))
+             plt.plot(df_results["timestamp"], df_results["actual"], label="Actual", linewidth=1.5)
+             plt.plot(df_results["timestamp"], df_results["prediction"], label="Predicted", linewidth=1.5)
+             plt.xlabel("Timp")
+             plt.ylabel("Consum (Power)")
+             plt.title(f"Predictii LSTM vs Valori Reale - {channel_name}")
+             plt.legend()
+             plt.grid(True)
+             plt.tight_layout()
+             plt.savefig(plot_save_path)
+             plt.close()
+
+             print(f"🖼️ Plot salvat: {plot_save_path}")
+
+         except Exception as e:
+             print(f"❌ Eroare la {channel_name}: {str(e)}")
 
     """FORECAST"""
 
-    for i in range(7, 8):
-        channel_name = f"channel_{i}"
+    target_day = "2014-06-15"
+    window_size = 72
 
+    models_dir = r'C:\Users\elecf\Desktop\Licenta\Date\UK-DALE-disaggregated\house_1\modele_salvate'
+    output_csv = r'C:\Users\elecf\Desktop\Licenta\Date\UK-DALE-disaggregated\house_1\predictii_viitor\combinat\forecast_total.csv'
+
+    # Date reale pentru canalul agregat
+    channel_1_path = os.path.join(downsampled_dir, "channel_1_downsampled_1H.csv")
+    channel_1_df = pd.read_csv(channel_1_path)
+    channel_1_df['timestamp'] = pd.to_datetime(channel_1_df['timestamp'])
+    channel_1_df.set_index('timestamp', inplace=True)
+    actual_total = channel_1_df.loc[target_day]['power'].reset_index(drop=True)
+    timestamps = channel_1_df.loc[target_day].index
+
+    # Pregatim dataframe combinat
+    combined_df = pd.DataFrame({'timestamp': timestamps})
+    total_pred = []
+    total_actual = []
+
+    for i in range(21, 23):
+        channel_name = f"channel_{i}"
         channel_csv_path = os.path.join(downsampled_dir, f"{channel_name}_downsampled_1H.csv")
         lstm_model_path = os.path.join(models_dir, f"lstm_model_{channel_name}.pth")
-        forecast_output_lstm_csv = r'C:\Users\elecf\Desktop\Licenta\Date\UK-DALE-disaggregated\house_1\predictii_viitor\csv\LSTM'
-        forecast_output_lstm_plot = r'C:\Users\elecf\Desktop\Licenta\Date\UK-DALE-disaggregated\house_1\predictii_viitor\plots\LSTM'
-        forecast_output_lstm_metrics = r'C:\Users\elecf\Desktop\Licenta\Date\UK-DALE-disaggregated\house_1\predictii_viitor\metrics\LSTM';
 
-        # Cream directoarele daca nu exista
-        os.makedirs(forecast_output_lstm_csv, exist_ok=True)
-        os.makedirs(forecast_output_lstm_plot, exist_ok=True)
-        os.makedirs(forecast_output_lstm_metrics, exist_ok=True)
-
-        # Cream path-urile pentru fisierul CSV si plot PNG
-        csv_output_path = os.path.join(forecast_output_lstm_csv, f"forecast_{channel_name}.csv")
-        plot_output_path = os.path.join(forecast_output_lstm_plot, f"forecast_plot_{channel_name}.png")
-        metrics_output_path = os.path.join(forecast_output_lstm_metrics, f"metrics_{channel_name}.csv")
-
-        print(f"\n📌 Forecast LSTM pentru: {channel_name}")
+        print(f"📌 Forecast pentru {channel_name}")
 
         try:
             forecaster = LSTMForecaster(
                 model_path=lstm_model_path,
                 csv_path=channel_csv_path,
-                window_size=168
+                window_size=window_size
             )
 
             forecaster.load_recent_data()
             forecaster.load_model()
+            df_forecast = forecaster.predict_day(target_day)
 
-            df_forecast = forecaster.test_on_day("2014-06-15")
+            combined_df[f"{channel_name}_predicted"] = df_forecast["predicted_power"]
+            combined_df[f"{channel_name}_actual"] = df_forecast["actual_power"]
 
-            df_forecast.to_csv(csv_output_path, index=False)
-            print(f"✅ Forecast salvat: {csv_output_path}")
-
-            plt.figure(figsize=(12, 6))
-            plt.plot(df_forecast['timestamp'], df_forecast['actual_power'], label="Actual", marker='o')
-            plt.plot(df_forecast['timestamp'], df_forecast['predicted_power'], label="Predicted", marker='x')
-            plt.title(f"Forecast vs Actual - {channel_name} - 2013-06-15")
-            plt.xlabel("Ora")
-            plt.ylabel("Power (W)")
-            plt.xticks(rotation=45)
-            plt.grid(True)
-            plt.legend()
-            plt.tight_layout()
-            plt.savefig(plot_output_path)
-            plt.close()
-            print(f"✅ Plot salvat: {plot_output_path}")
-
-            metrics_analyzer = ErrorMetricsAnalyzer(
-                          predictions=df_forecast["predicted_power"].values,
-                          actuals=df_forecast["actual_power"].values,
-                          output_path=metrics_output_path,
-                      )
-            metrics_analyzer.save_metrics()
+            total_pred.append(df_forecast["predicted_power"].values)
+            total_actual.append(df_forecast["actual_power"].values)
 
         except Exception as e:
-            print(f"❌ Eroare la {channel_name}: {str(e)}")
+            print(f"⚠️ Eroare la {channel_name}: {str(e)}")
+
+    # Adaugam totaluri
+    combined_df["total_predicted"] = sum(total_pred)
+    combined_df["total_actual"] = actual_total.values
+
+    # Salvam
+    os.makedirs(os.path.dirname(output_csv), exist_ok=True)
+    combined_df.to_csv(output_csv, index=False)
+    print(f"\n✅ Fisier final salvat: {output_csv}")
 
     """ KAN """
     # predictii_dir_kan = os.path.join(base_dir, "predictii")

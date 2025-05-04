@@ -156,7 +156,7 @@ class LSTMForecaster:
 
         print(f" Context de forecast pregatit din ultimele {self.window_size} valori.")
 
-    def test_on_day(self, target_day):
+    def predict_day(self, target_day):
         """
         Testeaza modelul pe o zi existenta din dataset.
         target_day: string format 'YYYY-MM-DD'
