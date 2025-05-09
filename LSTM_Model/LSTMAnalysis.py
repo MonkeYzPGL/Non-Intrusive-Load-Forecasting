@@ -38,8 +38,6 @@ class LSTMAnalyzer:
         self.learning_rate = learning_rate
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-        self.preprocess_data()
-
         self.model = LSTMModel(
             input_size=len(self.selected_features),
             hidden_size=self.hidden_size,
@@ -49,6 +47,8 @@ class LSTMAnalyzer:
         self.criterion = nn.SmoothL1Loss()
         self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.learning_rate, weight_decay=1e-5)
         self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, mode='min', factor=0.9, patience=3, min_lr=0.00005)
+
+        self.preprocess_data()
 
     def calculate_spike_threshold(self,df, method="std", k=3, percentile=95):
         if "power" not in df.columns:
