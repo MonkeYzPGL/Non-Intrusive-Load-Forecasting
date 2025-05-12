@@ -207,6 +207,8 @@ if __name__ == "__main__":
     metrics_dir_kan = os.path.join(metrics_dir_kan, "KAN")
     models_dir_kan = os.path.join(base_dir, "modele_salvate", "KAN")
     plots_dir_kan = os.path.join(base_dir, "plots", "KAN")
+    scalers_dir = os.path.join(base_dir, "modele_salvate", "KAN", "scalers")
+    os.makedirs(scalers_dir, exist_ok=True)
     #  Iteram prin toate canalele
     for i in range(30, 54):
         channel_name = f"channel_{i}"
@@ -224,11 +226,11 @@ if __name__ == "__main__":
             kan_model_path = os.path.join(models_dir, f"kan_model_{channel_name}.pth")
             kan_prediction_path = os.path.join(predictii_dir_kan, f"kan_predictions_{channel_name}.csv")
             kan_metrics_path = os.path.join(metrics_dir_kan, f"kan_metrics_{channel_name}.csv")
-            plot_save_path = os.path.join(plots_dir, f"plot_{channel_name}_KAN.png")
+            plot_save_path = os.path.join(plots_dir_kan, f"plot_{channel_name}_KAN.png")
 
             # Initializam si rulam modelul
             kan_analyzer = KANAnalyzer(csv_path=channel_csv_path)
-            kan_analyzer.preprocess_data()
+            kan_analyzer.preprocess_data(scalers_dir=scalers_dir)
             kan_analyzer.train(model_path=kan_model_path)
 
             # Predictii

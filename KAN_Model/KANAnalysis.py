@@ -6,6 +6,8 @@ from matplotlib import pyplot as plt
 from torch import nn
 from sklearn.preprocessing import MinMaxScaler
 from torch.utils.data import Dataset, DataLoader
+from xgboost.testing.data import joblib
+
 from KAN_Model.KAN import KAN
 from statsmodels.tsa.stattools import acf, pacf
 
@@ -64,11 +66,11 @@ class KANAnalyzer:
     def create_sequences(self, data, horizon=1):
         X, y = [], []
         for i in range(len(data) - self.window_size - horizon):
-            X.append(data[i + self.window_size - 1].astype(np.float32))  # asigura-te ca este float32
-            y.append(data[i + self.window_size + horizon - 1][0])  # valoarea `power`
+            X.append(data[i + self.window_size - 1].astype(np.float32))
+            y.append(data[i + self.window_size + horizon - 1][0])
         return np.array(X, dtype=np.float32), np.array(y, dtype=np.float32).reshape(-1, 1)
 
-    def preprocess_data(self):
+    def preprocess_data(self, scalers_dir = None):
         # Citirea datelor
         data = pd.read_csv(self.csv_path)
         data['timestamp'] = pd.to_datetime(data['timestamp'])
@@ -201,6 +203,17 @@ class KANAnalyzer:
         self.X = self.X.float().to(self.device)
         self.y = self.y.float().to(self.device)
         self.timestamps = test_data.index[self.window_size:].tolist()  # necesar pt predict()
+
+        if scalers_dir is not None:
+            os.makedirs(scalers_dir, exist_ok=True)
+            channel_name = os.path.basename(self.csv_path).split("_")[0]
+            scaler_X_path = os.path.join(scalers_dir, f"{channel_name}_scaler_X.pkl")
+            scaler_y_path = os.path.join(scalers_dir, f"{channel_name}_scaler_y.pkl")
+
+            joblib.dump(self.scaler, scaler_X_path)
+            joblib.dump(self.scaler_y, scaler_y_path)
+
+            print(f"✅ Scalerii salvati pentru {channel_name} la: {scaler_X_path} si {scaler_y_path}")
 
     def train(self, epochs=100, patience=10, model_path=None):
         input_size = self.X.shape[1]
