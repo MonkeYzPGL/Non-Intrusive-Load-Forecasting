@@ -1,4 +1,6 @@
 import os
+
+import joblib
 import numpy as np
 import pandas as pd
 import torch
@@ -6,7 +8,7 @@ from matplotlib import pyplot as plt
 from torch import nn
 from sklearn.preprocessing import MinMaxScaler
 from torch.utils.data import Dataset, DataLoader
-from xgboost.testing.data import joblib
+
 
 from KAN_Model.KAN import KAN
 from statsmodels.tsa.stattools import acf, pacf

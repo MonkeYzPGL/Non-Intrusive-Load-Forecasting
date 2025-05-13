@@ -1,4 +1,6 @@
 import os
+
+import joblib
 import torch
 import pandas as pd
 import numpy as np
@@ -28,7 +30,7 @@ class TimeSeriesDataset(Dataset):
         return self.X[idx], self.y[idx]
 
 class LSTMAnalyzer:
-    def __init__(self, csv_path, window_size=168, batch_size=64, hidden_size=512, learning_rate=0.001):
+    def __init__(self, csv_path, window_size=168, batch_size=64, hidden_size=512, learning_rate=0.001, scaler_dir = None, channel_number = 0):
         torch.manual_seed(42)
         np.random.seed(42)
         self.csv_path = csv_path
@@ -36,7 +38,20 @@ class LSTMAnalyzer:
         self.batch_size = batch_size
         self.hidden_size = hidden_size
         self.learning_rate = learning_rate
+        self.scaler_dir = scaler_dir
+        self.channel_number = channel_number
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+        # Cream path-urile pentru scalere
+        if self.scaler_dir is not None:
+            os.makedirs(self.scaler_dir, exist_ok=True)
+            self.scaler_path_X = os.path.join(self.scaler_dir, f"channel_{self.channel_number}_X_scaler.pkl")
+            self.scaler_path_y = os.path.join(self.scaler_dir, f"channel_{self.channel_number}_y_scaler.pkl")
+        else:
+            self.scaler_path_X = None
+            self.scaler_path_y = None
+
+        self.preprocess_data()
 
         self.model = LSTMModel(
             input_size=len(self.selected_features),
@@ -48,7 +63,6 @@ class LSTMAnalyzer:
         self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.learning_rate, weight_decay=1e-5)
         self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, mode='min', factor=0.9, patience=3, min_lr=0.00005)
 
-        self.preprocess_data()
 
     def calculate_spike_threshold(self,df, method="std", k=3, percentile=95):
         if "power" not in df.columns:
@@ -159,18 +173,16 @@ class LSTMAnalyzer:
         test_data = data.iloc[train_size + val_size:]
 
         # Selectăm caracteristicile pentru scalare
-        self.selected_features = ['power', 'delta_power', 'day_of_week', 'hour_of_day', 'is_weekend', 'month', 'season',
-                                  'lag_1h', 'lag_2h', 'lag_3h', 'lag_6h', 'lag_12h', 'lag_24h', 'lag_48h', 'lag_168h',
-                                  'hour_sin', 'hour_cos', 'day_sin', 'day_cos',
-                                  'roc_1h', 'roc_3h', 'roc_6h', 'roc_12h', 'roc_24h', 'zscore_24h', 'spike_flag',
-                                  'rolling_skew_24h', 'rolling_kurt_24h', 'grad_3h', 'grad_6h',
-                                  'rolling_mean_12h', 'rolling_std_12h', 'rolling_max_12h', 'rolling_mean_24h',
-                                  'rolling_min_12h', 'rolling_max_24h', 'rolling_std_24h', 'power_diff_24h',
-                                  'acf_1h', 'pacf_1h', 'event_spike', 'event_drop',
-                                  'rolling_sum_24h',
-                                  'rolling_min_24h',
-                                  'rolling_max_24h',
-                                  'is_spike_context'
+        self.selected_features = ['power', 'day_of_week', 'hour_of_day', 'is_weekend', 'month', 'season',
+                                   'hour_sin', 'hour_cos', 'day_sin', 'day_cos', 'lag_1h', 'lag_2h',
+                                   'lag_3h', 'lag_6h', 'lag_12h', 'lag_24h', 'lag_48h', 'lag_168h',
+                                   'roc_1h', 'roc_3h', 'roc_6h', 'roc_12h', 'roc_24h', 'zscore_24h',
+                                   'spike_flag', 'rolling_skew_24h', 'rolling_kurt_24h', 'grad_3h',
+                                   'grad_6h', 'delta_power', 'rolling_mean_12h', 'rolling_std_12h',
+                                   'rolling_max_12h', 'rolling_mean_24h', 'rolling_min_12h',
+                                   'rolling_median_12h', 'rolling_max_24h', 'rolling_min_24h',
+                                   'rolling_std_24h', 'rolling_sum_24h', 'power_diff_24h', 'event_spike',
+                                   'event_drop', 'is_spike_context', 'acf_1h', 'pacf_1h'
                                   ]
 
         # Aplicăm scalarea DOAR pe setul de train pt. a evita data leakage
@@ -194,10 +206,15 @@ class LSTMAnalyzer:
         self.val_loader = DataLoader(TimeSeriesDataset(X_val, y_val), batch_size=self.batch_size, shuffle=False)
         self.test_loader = DataLoader(TimeSeriesDataset(X_test, y_test), batch_size=self.batch_size, shuffle=False)
 
-        self.threshold = self.calculate_spike_threshold(train_data, method="std", k=1.5)
+        self.threshold = self.calculate_spike_threshold(train_data, method="std", k=1)
         print(f"Threshold spike auto-calculat: {self.threshold}")
 
         self.test_data = test_data.copy()
+
+        if self.scaler_path_X is not None and self.scaler_path_y is not None:
+            joblib.dump(self.scaler, self.scaler_path_X)
+            joblib.dump(self.scaler_y, self.scaler_path_y)
+            print(f" Scalere salvate pentru channel_{self.channel_number}: {self.scaler_path_X}, {self.scaler_path_y}")
 
         # corr_features = ['power', 'delta_power', 'day_of_week', 'hour_of_day', 'is_weekend', 'month', 'season',
         #     'lag_1h', 'lag_6h', 'lag_12h', 'lag_24h', 'lag_48h', 'lag_168h',
