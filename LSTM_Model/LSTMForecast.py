@@ -75,7 +75,7 @@ class LSTMForecaster:
         data["day_cos"] = np.cos(2 * np.pi * data["day_of_week"] / 7)
 
         # Aplicare lag-uri
-        lags = [1, 2, 3, 6, 12, 24, 48, 168]
+        lags = [1, 2, 3, 6, 12, 24, 48,72, 168, 336, 672]
         for lag in lags:
             data[f'lag_{lag}h'] = data['power'].shift(lag)
 

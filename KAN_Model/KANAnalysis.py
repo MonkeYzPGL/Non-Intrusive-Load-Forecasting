@@ -1,4 +1,5 @@
 import os
+import time
 
 import joblib
 import numpy as np
@@ -26,12 +27,14 @@ class TimeSeriesDataset(Dataset):
 
 
 class KANAnalyzer:
-    def __init__(self, csv_path, window_size=168, hidden_size=128, batch_size=32, learning_rate=0.001):
+    timing_csv = "training_timing_kan.csv"
+    def __init__(self, csv_path, window_size=168, hidden_size=128, batch_size=32, learning_rate=0.001, channel_number = 0):
         self.csv_path = csv_path
         self.window_size = window_size
         self.hidden_size = hidden_size
         self.batch_size = batch_size
         self.learning_rate = learning_rate
+        self.channel_number = channel_number
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         self.scaler = MinMaxScaler()
@@ -223,15 +226,17 @@ class KANAnalyzer:
             layers_hidden=[input_size, self.hidden_size, 1]
         ).to(self.device)
 
-        self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.learning_rate, weight_decay=1e-5)
+        self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.learning_rate, weight_decay=1e-4)
         self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            self.optimizer, mode='min', factor=0.9, patience=3, min_lr=5e-5
+            self.optimizer, mode='min', factor=0.8, patience=3, min_lr=5e-5
         )
 
         train_losses = []
         val_losses = []
         best_val_loss = float('inf')
         patience_counter = 0
+
+        start_time = time.time()
 
         for epoch in range(epochs):
             self.model.train()
@@ -280,6 +285,23 @@ class KANAnalyzer:
                 break
 
             self.scheduler.step(val_losses[-1])
+
+        # End timer
+        end_time = time.time()
+        training_duration = end_time - start_time
+        print(f"\n Timp total pentru antrenare canal {self.channel_number}: {training_duration:.2f} secunde")
+
+        # Salvare timp intr-un CSV global
+        timing_data = pd.DataFrame([{
+            "channel_number": self.channel_number,
+            "training_time_seconds": training_duration
+        }])
+
+        # Verifica daca fisierul exista, daca nu, adauga header
+        if not os.path.exists(self.timing_csv):
+            timing_data.to_csv(self.timing_csv, index=False, mode='w')
+        else:
+            timing_data.to_csv(self.timing_csv, index=False, mode='a', header=False)
 
         # Plot
         plt.plot(train_losses, label="Train Loss")

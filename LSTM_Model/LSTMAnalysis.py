@@ -1,4 +1,5 @@
 import os
+import time
 
 import joblib
 import torch
@@ -13,11 +14,6 @@ from sklearn.preprocessing import MinMaxScaler
 from LSTM_Model.LSTM import LSTMModel
 import warnings
 
-# Ignoram warnings de tip ValueWarning (gen "Matrix is singular")
-warnings.filterwarnings("ignore", category=UserWarning)
-warnings.filterwarnings("ignore", category=ValueWarning)
-
-
 class TimeSeriesDataset(Dataset):
     def __init__(self, X, y):
         self.X = X
@@ -30,6 +26,7 @@ class TimeSeriesDataset(Dataset):
         return self.X[idx], self.y[idx]
 
 class LSTMAnalyzer:
+    timing_csv = "training_timing_lstm.csv"
     def __init__(self, csv_path, window_size=168, batch_size=64, hidden_size=512, learning_rate=0.001, scaler_dir = None, channel_number = 0):
         torch.manual_seed(42)
         np.random.seed(42)
@@ -60,11 +57,10 @@ class LSTMAnalyzer:
         ).to(self.device)
 
         self.criterion = nn.SmoothL1Loss()
-        self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.learning_rate, weight_decay=1e-5)
-        self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, mode='min', factor=0.9, patience=3, min_lr=0.00005)
+        self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.learning_rate, weight_decay=1e-4)
+        self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, mode='min', factor=0.8, patience=3, min_lr=0.00001)
 
-
-    def calculate_spike_threshold(self,df, method="std", k=3, percentile=95):
+    def calculate_spike_threshold(self, df, method="std", k=3, percentile=95, set_name="train"):
         if "power" not in df.columns:
             raise ValueError("DataFrame-ul trebuie sa aiba o coloana 'power'.")
 
@@ -77,11 +73,12 @@ class LSTMAnalyzer:
         else:
             raise ValueError("Metoda trebuie sa fie 'std' sau 'percentile'.")
 
+        print(f" Threshold calculat pentru {set_name} ({method}): {threshold:.2f} W")
         return threshold
 
-    def custom_loss(self, y_pred, y_true, alpha=3):
+    def custom_loss(self, y_pred, y_true, threshold, alpha=2):
         base_loss = self.criterion(y_pred, y_true)
-        spike_mask = (torch.abs(y_true - y_pred) > self.threshold).float()
+        spike_mask = (torch.abs(y_true - y_pred) > threshold).float()
         spike_loss = (spike_mask * torch.abs(y_true - y_pred)).mean()
         return base_loss + alpha * spike_loss
 
@@ -105,7 +102,7 @@ class LSTMAnalyzer:
         data["day_cos"] = np.cos(2 * np.pi * data["day_of_week"] / 7)
 
         # Aplicare lag-uri
-        lags = [1, 2, 3, 6, 12, 24, 48, 168]
+        lags = [1, 2, 3, 6, 12, 24, 48,72, 168, 336, 672]
         for lag in lags:
             data[f'lag_{lag}h'] = data['power'].shift(lag)
 
@@ -175,7 +172,7 @@ class LSTMAnalyzer:
         # Selectăm caracteristicile pentru scalare
         self.selected_features = ['power', 'day_of_week', 'hour_of_day', 'is_weekend', 'month', 'season',
                                    'hour_sin', 'hour_cos', 'day_sin', 'day_cos', 'lag_1h', 'lag_2h',
-                                   'lag_3h', 'lag_6h', 'lag_12h', 'lag_24h', 'lag_48h', 'lag_168h',
+                                   'lag_3h', 'lag_6h', 'lag_12h', 'lag_24h', 'lag_48h','lag_72h', 'lag_168h', 'lag_336h','lag_672h',
                                    'roc_1h', 'roc_3h', 'roc_6h', 'roc_12h', 'roc_24h', 'zscore_24h',
                                    'spike_flag', 'rolling_skew_24h', 'rolling_kurt_24h', 'grad_3h',
                                    'grad_6h', 'delta_power', 'rolling_mean_12h', 'rolling_std_12h',
@@ -206,8 +203,9 @@ class LSTMAnalyzer:
         self.val_loader = DataLoader(TimeSeriesDataset(X_val, y_val), batch_size=self.batch_size, shuffle=False)
         self.test_loader = DataLoader(TimeSeriesDataset(X_test, y_test), batch_size=self.batch_size, shuffle=False)
 
-        self.threshold = self.calculate_spike_threshold(train_data, method="std", k=1)
-        print(f"Threshold spike auto-calculat: {self.threshold}")
+        self.train_threshold = self.calculate_spike_threshold(train_data, method="std", k=1, set_name="train")
+        self.val_threshold = self.calculate_spike_threshold(val_data, method="std", k=1, set_name="validation")
+        self.test_threshold = self.calculate_spike_threshold(test_data, method="std", k=1, set_name="test")
 
         self.test_data = test_data.copy()
 
@@ -250,6 +248,9 @@ class LSTMAnalyzer:
         best_val_loss = float('inf')
         patience_counter = 0
 
+        # Start timer
+        start_time = time.time()
+
         for epoch in range(epochs):
             self.model.train()
             train_loss = 0.0
@@ -258,7 +259,7 @@ class LSTMAnalyzer:
                 X_batch, y_batch = X_batch.to(self.device), y_batch.to(self.device)
                 self.optimizer.zero_grad()
                 y_pred = self.model(X_batch)
-                loss = self.custom_loss(y_pred, y_batch)
+                loss = self.custom_loss(y_pred, y_batch, threshold=self.train_threshold)
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=5)
                 self.optimizer.step()
@@ -270,7 +271,7 @@ class LSTMAnalyzer:
                 for X_batch, y_batch in self.val_loader:
                     X_batch, y_batch = X_batch.to(self.device), y_batch.to(self.device)
                     y_pred = self.model(X_batch)
-                    val_loss += self.custom_loss(y_pred, y_batch).item()
+                    val_loss += self.custom_loss(y_pred, y_batch, threshold=self.val_threshold).item()
 
             train_losses.append(train_loss / len(self.train_loader))
             val_losses.append(val_loss / len(self.val_loader))
@@ -299,11 +300,22 @@ class LSTMAnalyzer:
 
             self.scheduler.step(val_losses[-1])
 
-        plt.plot(train_losses, label="Train Loss")
-        plt.plot(val_losses, label="Validation Loss")
-        plt.legend()
-        plt.title("Train vs Validation Loss")
-        plt.show()
+        # End timer
+        end_time = time.time()
+        training_duration = end_time - start_time
+        print(f"\n Timp total pentru antrenare canal {self.channel_number}: {training_duration:.2f} secunde")
+
+        # Salvare timp intr-un CSV global
+        timing_data = pd.DataFrame([{
+            "channel_number": self.channel_number,
+            "training_time_seconds": training_duration
+        }])
+
+        # Verifica daca fisierul exista, daca nu, adauga header
+        if not os.path.exists(self.timing_csv):
+            timing_data.to_csv(self.timing_csv, index=False, mode='w')
+        else:
+            timing_data.to_csv(self.timing_csv, index=False, mode='a', header=False)
 
     def predict(self):
         self.model.eval()
@@ -314,9 +326,8 @@ class LSTMAnalyzer:
                 X_batch = X_batch.to(self.device).float()
                 y_batch = y_batch.to(self.device)
 
-                # Predictii
-                y_pred = self.model(X_batch).cpu().numpy()  # (batch, 24)
-                y_batch = y_batch.cpu().numpy()  # (batch, 24)
+                y_pred = self.model(X_batch).cpu().numpy()
+                y_batch = y_batch.cpu().numpy()
 
                 for i in range(len(y_pred)):
                     pred_fill = np.zeros((24, len(self.selected_features)))
@@ -325,16 +336,24 @@ class LSTMAnalyzer:
                     pred_fill[:, 0] = y_pred[i]
                     actual_fill[:, 0] = y_batch[i]
 
-                    y_pred_inv = self.scaler.inverse_transform(pred_fill)[:, 0]
+                    y_pred_inv = self.scaler_y.inverse_transform(pred_fill)[:, 0]
                     y_pred_inv = np.clip(y_pred_inv, 0, None)
-                    y_actual_inv = self.scaler.inverse_transform(actual_fill)[:, 0]
+                    y_actual_inv = self.scaler_y.inverse_transform(actual_fill)[:, 0]
+
+                    # Calculam pierderea pe test set
+                    test_loss = self.custom_loss(
+                        torch.tensor(y_pred[i]).float(),
+                        torch.tensor(y_batch[i]).float(),
+                        threshold=self.test_threshold
+                    )
 
                     timestamp = self.test_data.index[self.window_size + batch_idx * self.batch_size + i]
 
                     row = {
                         "timestamp": timestamp,
-                        "prediction": y_pred_inv[0],  # prima ora
-                        "actual": y_actual_inv[0]  # prima ora
+                        "prediction": y_pred_inv[0],
+                        "actual": y_actual_inv[0],
+                        "test_loss": test_loss.item()
                     }
 
                     rows.append(row)
