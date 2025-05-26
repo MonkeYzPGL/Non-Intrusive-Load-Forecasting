@@ -20,14 +20,14 @@ from LSTM_Model.LSTMForecast import LSTMForecaster
 if __name__ == "__main__":
     # 📌 Setăm directorul de bază (modifică-l dacă e necesar)
     base_dir = r'C:\Users\elecf\Desktop\Licenta\Date\UK-DALE-disaggregated\house_1'
-    labels_file = os.path.join(base_dir, 'labels.dat')
-
-    # 📌 Detectăm automat canalele din fișierele .dat
-    valid_channels = []
-    for f in os.listdir(base_dir):
-        if f.endswith(".dat") and "labels" not in f.lower():
-            valid_channels.append(f)
-    channels = valid_channels
+    # labels_file = os.path.join(base_dir, 'labels.dat')
+    #
+    # # 📌 Detectăm automat canalele din fișierele .dat
+    # valid_channels = []
+    # for f in os.listdir(base_dir):
+    #     if f.endswith(".dat") and "labels" not in f.lower():
+    #         valid_channels.append(f)
+    # channels = valid_channels
 
     # 📌 Cream sub-directoarele pentru organizarea fișierelor
     aggregated_dir = os.path.join(base_dir, "aggregated")
@@ -46,9 +46,9 @@ if __name__ == "__main__":
     os.makedirs(predictii_viitor_dir, exist_ok=True)
 
     # 📌 Inițializăm și preprocesăm datele
-    analyzer = DataAnalyzer(house_dir=base_dir, labels_file=labels_file, channels=channels)
-    analyzer.load_labels()
-    analyzer.load_data()
+    # analyzer = DataAnalyzer(house_dir=base_dir, labels_file=labels_file, channels=channels)
+    # analyzer.load_labels()
+    # analyzer.load_data()
 
     # for channel in channels:
     #analyzer.plot_acf_pacf(r'C:\Users\elecf\Desktop\Licenta\Date\UK-DALE-disaggregated\house_1\downsampled\1H\channel_1_downsampled_1H.csv')
@@ -78,21 +78,12 @@ if __name__ == "__main__":
     # plot_analyzer.plot_correlograms()  # Corelograme pentru analiza corelatiilor
 
     #  Salvăm datele agregate și reducem granularitatea
-    aggregation_analyzer = AggregationAnalyzer(data_dict=analyzer.data_dict, labels=analyzer.labels)
+    # aggregation_analyzer = AggregationAnalyzer(data_dict=analyzer.data_dict, labels=analyzer.labels)
     downsampled_dir = os.path.join(downsampled_dir, "1H")
-    aggregation_analyzer.save_downsampled_data(freq='1h', output_dir=downsampled_dir)
-
-    #Verificare consistenta
-    aggregation_analyzer.check_data_consistency(
-        dir= downsampled_dir,
-        output_file="C:/Users/elecf/Desktop/Licenta/Date/UK-DALE-disaggregated/house_1/downsampled/1H/inconsistent_hours.csv"
-    )
-
-    match, report_df = aggregation_analyzer.verify_channel_sums(downsampled_dir)
-    print(f"All channels match: {match}")
-    report_df.to_csv('channel_comparison_report.csv')
-    # Calculăm diferențele între canale (delta)
-    # calculate_delta(downsampled_dir)
+    # aggregation_analyzer.save_downsampled_data(freq='1h', output_dir=downsampled_dir)
+    # aggregation_analyzer.generate_aggregated(downsampled_dir)
+    # # Calculăm diferențele între canale (delta)
+    # # calculate_delta(downsampled_dir)
 
     predictii_dir_lstm = os.path.join(base_dir, "predictii")
     predictii_dir_lstm = os.path.join(predictii_dir_lstm, "LSTM")
@@ -101,16 +92,18 @@ if __name__ == "__main__":
 
     metrics_dir_lstm = os.path.join(base_dir, "metrics")
     metrics_dir_lstm = os.path.join(metrics_dir_lstm, "LSTM")
+    plots_dir_lstm = os.path.join(plots_dir, "LSTM")
+    lstm_model_dir = os.path.join(models_dir, "LSTM")
 
     """TEST LSTM"""
     for i in range(2, 2):
          channel_name = f"channel_{i}"
 
          channel_csv_path = os.path.join(downsampled_dir, f"{channel_name}_downsampled_1H.csv")
-         lstm_model_path = os.path.join(models_dir, f"lstm_model_{channel_name}.pth")
+         lstm_model_path = os.path.join(lstm_model_dir, f"lstm_model_{channel_name}.pth")
          lstm_prediction_path = os.path.join(predictii_dir_lstm, f"lstm_predictions_{channel_name}.csv")
          lstm_metrics_path = os.path.join(metrics_dir_lstm, f"lstm_metrics_{channel_name}.csv")
-         plot_save_path = os.path.join(plots_dir, f"plot_{channel_name}.png")
+         plot_save_path = os.path.join(plots_dir_lstm, f"plot_{channel_name}.png")
 
          print(f"\n📌 Rulare LSTM: {channel_name}")
 
@@ -156,13 +149,33 @@ if __name__ == "__main__":
              print(f"❌ Eroare la {channel_name}: {str(e)}")
 
     """FORECAST"""
-    target_day = "2013-10-12"
+    # === Config de baza ===
+    target_day = "2014-11-20"
     window_size = 168
 
-    models_dir_lstm = r'C:\Users\elecf\Desktop\Licenta\Date\UK-DALE-disaggregated\house_1\modele_salvate\LSTM'
-    output_csv = r'C:\Users\elecf\Desktop\Licenta\Date\UK-DALE-disaggregated\house_1\predictii_viitor\combinat\forecast_total.csv'
-    output_channel_csv_LSTM = r'C:\Users\elecf\Desktop\Licenta\Date\UK-DALE-disaggregated\house_1\predictii_viitor\csv\LSTM'
-    # Date reale pentru canalul agregat
+    # === Folder root pentru predictii ===
+    base_output_path = r"C:\Users\elecf\Desktop\Licenta\Date\UK-DALE-disaggregated\house_1\predictii_viitor"
+    target_folder = os.path.join(base_output_path, target_day)
+
+    # === Structura directoare ===
+    subdirs = {
+        "combinat": os.path.join(target_folder, "combinat"),
+        "csv_LSTM": os.path.join(target_folder, "csv", "LSTM"),
+        "plots_LSTM": os.path.join(target_folder, "plots", "LSTM"),
+        "metrics_LSTM": os.path.join(target_folder, "metrics", "LSTM")
+    }
+
+    # Creaza toate folderele necesare
+    for path in subdirs.values():
+        os.makedirs(path, exist_ok=True)
+
+    # === Fisiere output ===
+    output_csv = os.path.join(subdirs["combinat"], "forecast_total.csv")
+    output_channel_csv_LSTM = subdirs["csv_LSTM"]
+    plots_output_LSTM = subdirs["plots_LSTM"]
+    metrics_output_LSTM = subdirs["metrics_LSTM"]  # optional
+
+    # === Date reale pentru canalul 1 ===
     channel_1_path = os.path.join(downsampled_dir, "channel_1_downsampled_1H.csv")
     channel_1_df = pd.read_csv(channel_1_path)
     channel_1_df['timestamp'] = pd.to_datetime(channel_1_df['timestamp'])
@@ -170,15 +183,15 @@ if __name__ == "__main__":
     actual_total = channel_1_df.loc[target_day]['power'].reset_index(drop=True)
     timestamps = channel_1_df.loc[target_day].index
 
-    # Pregatim dataframe combinat
+    # === Predictii combinate ===
     combined_df = pd.DataFrame({'timestamp': timestamps})
     total_pred = []
     total_actual = []
 
-    for i in range(22, 22):
+    for i in range(2, 54):
         channel_name = f"channel_{i}"
         channel_csv_path = os.path.join(downsampled_dir, f"{channel_name}_downsampled_1H.csv")
-        lstm_model_path = os.path.join(models_dir_lstm, f"lstm_model_{channel_name}.pth")
+        lstm_model_path = os.path.join(lstm_model_dir, f"lstm_model_{channel_name}.pth")
 
         print(f"📌 Forecast pentru {channel_name}")
 
@@ -201,22 +214,55 @@ if __name__ == "__main__":
             total_pred.append(df_forecast["predicted_power"].values)
             total_actual.append(df_forecast["actual_power"].values)
 
+            # Salvare CSV
             channel_output_csv = os.path.join(output_channel_csv_LSTM, f"forecast_{channel_name}.csv")
-            os.makedirs(output_channel_csv_LSTM, exist_ok=True)
             df_forecast.to_csv(channel_output_csv, index=False)
-            print(f"✅ Fisier salvat pentru {channel_name}: {channel_output_csv}")
+
+            # Salvare grafic individual
+            plt.figure(figsize=(10, 4))
+            plt.plot(df_forecast["timestamp"], df_forecast["actual_power"], label="Actual", color="red")
+            plt.plot(df_forecast["timestamp"], df_forecast["predicted_power"], label="Predicted", color="blue")
+            plt.title(f"Forecast vs Actual - {channel_name}")
+            plt.xlabel("Timestamp")
+            plt.ylabel("Power")
+            plt.legend()
+            plt.xticks(rotation=45)
+            plt.tight_layout()
+            plt.grid(True)
+
+            plot_path = os.path.join(plots_output_LSTM, f"plot_{channel_name}.png")
+            plt.savefig(plot_path)
+            plt.close()
+
+            print(f"✅ Salvat pentru {channel_name}")
 
         except Exception as e:
             print(f"⚠️ Eroare la {channel_name}: {str(e)}")
 
-    # Adaugam totaluri
+    # Totaluri
     combined_df["total_predicted"] = sum(total_pred)
     combined_df["total_actual"] = actual_total.values
 
-    # Salvam
-    os.makedirs(os.path.dirname(output_csv), exist_ok=True)
+    # Salvare finala
     combined_df.to_csv(output_csv, index=False)
     print(f"\n✅ Fisier final salvat: {output_csv}")
+
+    # Grafic total
+    plt.figure(figsize=(12, 5))
+    plt.plot(combined_df["timestamp"], combined_df["total_actual"], label="Total Actual", color="red")
+    plt.plot(combined_df["timestamp"], combined_df["total_predicted"], label="Total Predicted", color="blue")
+    plt.title("Total Predicted vs Total Actual")
+    plt.xlabel("Timestamp")
+    plt.ylabel("Power")
+    plt.legend()
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+    plt.grid(True)
+
+    # Salvare grafic total
+    total_plot_path = os.path.join(subdirs["combinat"], "total_forecast_plot.png")
+    plt.savefig(total_plot_path)
+    plt.close()
 
     """ KAN """
     predictii_dir_kan = os.path.join(base_dir, "predictii")

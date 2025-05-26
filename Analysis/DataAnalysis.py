@@ -101,17 +101,6 @@ class DataAnalyzer:
 
         self.metrics_df = pd.DataFrame(metrics)
 
-    def display_metrics(self):
-        """Display metrici si salvare in .csv"""
-        if self.metrics_df is not None:
-            print("Metrics for Each Channel:")
-            print(tabulate(self.metrics_df, headers='keys', tablefmt='grid'))
-            output_file = os.path.join(self.house_dir, 'metrics.csv')
-            self.metrics_df.to_csv(output_file, index=False)
-            print(f"Metrics saved to {output_file}")
-        else:
-            print("No metrics to display.")
-
     def plot_acf_pacf(self, file_path):
         """
         Ploteaza ACF si PACF pentru un fisier csv specific.

@@ -28,7 +28,7 @@ class TimeSeriesDataset(Dataset):
 
 class KANAnalyzer:
     timing_csv = "training_timing_kan.csv"
-    def __init__(self, csv_path, window_size=168, hidden_size=128, batch_size=32, learning_rate=0.001, channel_number = 0):
+    def __init__(self, csv_path, window_size=168, hidden_size=256, batch_size=32, learning_rate=0.001, channel_number = 0):
         self.csv_path = csv_path
         self.window_size = window_size
         self.hidden_size = hidden_size
@@ -71,7 +71,8 @@ class KANAnalyzer:
     def create_sequences(self, data, horizon=1):
         X, y = [], []
         for i in range(len(data) - self.window_size - horizon):
-            X.append(data[i + self.window_size - 1].astype(np.float32))
+            sequence = data[i: i + self.window_size].flatten().astype(np.float32)
+            X.append(sequence)
             y.append(data[i + self.window_size + horizon - 1][0])
         return np.array(X, dtype=np.float32), np.array(y, dtype=np.float32).reshape(-1, 1)
 
@@ -291,7 +292,7 @@ class KANAnalyzer:
         training_duration = end_time - start_time
         print(f"\n Timp total pentru antrenare canal {self.channel_number}: {training_duration:.2f} secunde")
 
-        # Salvare timp intr-un CSV global
+        # Salvare timp intr-un CSV
         timing_data = pd.DataFrame([{
             "channel_number": self.channel_number,
             "training_time_seconds": training_duration

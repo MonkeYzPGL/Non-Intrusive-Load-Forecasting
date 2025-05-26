@@ -8,7 +8,7 @@ from datetime import timedelta
 
 from statsmodels.tsa.stattools import acf, pacf
 
-from LSTM_Model.LSTM import LSTMModel  # Asigură-te că path-ul e corect
+from LSTM_Model.LSTM import LSTMModel
 
 class LSTMForecaster:
     def __init__(self, model_path, csv_path, window_size=168, hidden_size=512, scaler_dir = None, channel_number = 0):
@@ -39,7 +39,7 @@ class LSTMForecaster:
         if not os.path.exists(self.model_path):
             raise FileNotFoundError(f"Modelul nu a fost gasit: {self.model_path}")
 
-        state_dict = torch.load(self.model_path, map_location=self.device)
+        state_dict = torch.load(self.model_path, map_location=self.device, weights_only=True)
         self.model.load_state_dict(state_dict)
         self.model.eval()
 
@@ -91,7 +91,6 @@ class LSTMForecaster:
         data['spike_flag'] = (data['zscore_24h'].abs() > 2).astype(int)
 
         data['rolling_skew_24h'] = data['power'].rolling(24).skew()
-        data['rolling_kurt_24h'] = data['power'].rolling(24).kurt()
 
         data['grad_3h'] = data['power'].rolling(3).apply(lambda x: x.iloc[-1] - x.iloc[0])
         data['grad_6h'] = data['power'].rolling(6).apply(lambda x: x.iloc[-1] - x.iloc[0])
@@ -100,14 +99,12 @@ class LSTMForecaster:
         data['delta_power'] = data['power'].diff().shift(1)
         data['rolling_mean_12h'] = data['power'].rolling('12h').mean().shift(1)
         data['rolling_std_12h'] = data['power'].rolling('12h').std().shift(1)
-        data['rolling_max_12h'] = data['power'].rolling('12h').max().shift(1)
         data['rolling_mean_24h'] = data['power'].rolling('24h').mean().shift(1)
         data['rolling_min_12h'] = data['power'].rolling('12h').min().shift(1)
         data['rolling_median_12h'] = data['power'].rolling('12h').median().shift(1)
         data['rolling_max_24h'] = data['power'].rolling('24h').max().shift(1)
         data['rolling_min_24h'] = data['power'].rolling('24h').min().shift(1)
         data['rolling_std_24h'] = data['power'].rolling('24h').std().shift(1)
-        data['rolling_sum_24h'] = data['power'].rolling(24).sum().shift(1)
 
         data["power_diff_24h"] = data["power"] - data["power"].shift(24)
 
@@ -119,9 +116,7 @@ class LSTMForecaster:
         data['event_drop'] = (data['power_diff_24h'] < -self.spike_event_threshold).astype(int)
         data['is_spike_context'] = data['event_spike'].rolling(3, center=True).max().fillna(0)
 
-        data['acf_1h'] = data['power'].rolling(24).apply(
-            lambda x: acf(x, nlags=1, fft=True)[1] if len(x.dropna()) == 24 else 0)
-        data['pacf_1h'] = data['power'].rolling(24).apply(lambda x: pacf(x, nlags=1)[1] if len(x.dropna()) == 24 else 0)
+        data['acf_1h'] = data['power'].rolling(24).apply(lambda x: acf(x, nlags=1, fft=True)[1] if len(x.dropna()) == 24 else 0)
 
         data = data.interpolate(method='linear', limit_direction='both')
         data.fillna(0, inplace=True)
@@ -134,7 +129,8 @@ class LSTMForecaster:
         df.set_index('timestamp', inplace=True)
         df = self.generate_features(df)
         self.context_df = df.tail(self.window_size).copy()
-        self.selected_features = list(self.context_df.columns)
+        self.context_df = df.tail(self.window_size).copy()
+        self.selected_features = [col for col in self.context_df.columns if col != "power_diff_24h"]
         print(f"Context de forecast pregatit din ultimele {self.window_size} valori cu {len(self.selected_features)} caracteristici.")
 
     def predict_day(self, target_day):
