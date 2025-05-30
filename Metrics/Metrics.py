@@ -1,74 +1,60 @@
-import numpy as np
+import os
 import pandas as pd
-from scipy.stats import pearsonr
-from tabulate import tabulate
 
+def metrics_channels(input_dir, output_dir):
+    os.makedirs(output_dir, exist_ok=True)
 
-class MetricsAnalyzer:
-    def __init__(self, data_dict, labels):
-        self.data_dict = data_dict
-        self.labels = labels
-        self.metrics_df = {}
+    for file in os.listdir(input_dir):
+        if file.endswith("_downsampled_1H.csv"):
+            try:
+                path = os.path.join(input_dir, file)
+                df = pd.read_csv(path, parse_dates=['timestamp'])
 
-    def calculate_daily_average(self):
-        """Calculăm media zilnică a consumului energetic pentru fiecare canal"""
-        daily_averages = []
-        for channel, data in self.data_dict.items():
-            if data is not None:
-                daily_data = data.resample('D').sum()
-                average_daily = daily_data['power'].mean()
-                daily_averages.append({
-                    'channel': self.labels.get(channel, 'Unknown'),
-                    'average_daily_power': average_daily
-                })
-        return pd.DataFrame(daily_averages)
+                if 'power' not in df.columns or df.empty:
+                    print(f" Fisier invalid: {file}")
+                    continue
 
-    def identify_peaks(self):
-        """Identificăm peak-ul consumului pentru fiecare canal"""
-        peaks = []
-        for channel, data in self.data_dict.items():
-            if data is not None:
-                max_power = data['power'].max()
-                timestamp = data['power'].idxmax()
-                peaks.append({
-                    'channel': self.labels.get(channel, 'Unknown'),
-                    'peak_power': max_power,
-                    'timestamp': timestamp
-                })
-        return pd.DataFrame(peaks)
+                df['hour'] = df['timestamp'].dt.hour
+                df['weekday'] = df['timestamp'].dt.day_name()
 
-    def calculate_correlation(self):
-        """Calculăm corelația energetică între consumul total și canalele individuale"""
-        if 'channel_1.dat' not in self.data_dict or self.data_dict['channel_1.dat'] is None:
-            print("⚠️ Channel 1 data is necesară pentru calculul corelației.")
-            return None
+                stats = {
+                    'min': df['power'].min(),
+                    'max': df['power'].max(),
+                    'mean': df['power'].mean(),
+                    'sum': df['power'].sum(),
+                    'std': df['power'].std(),
+                    'median': df['power'].median(),
+                    'nr_ore_active': (df['power'] > 0).sum(),
+                    'procent_activitate': (df['power'] > 0).mean() * 100,
+                    'ora_cu_consum_maxim': df.groupby('hour')['power'].mean().idxmax(),
+                    'zi_cu_consum_maxim': df.groupby('weekday')['power'].mean().idxmax(),
+                }
 
-        total_power = self.data_dict['channel_1.dat']['power']
-        correlations = []
+                channel_name = file.split("_downsampled")[0]
+                output_file = os.path.join(output_dir, f"{channel_name}_details.csv")
+                pd.DataFrame([stats]).to_csv(output_file, index=False)
 
-        for channel, data in self.data_dict.items():
-            if channel != 'channel_1.dat' and data is not None:
-                common_index = total_power.index.intersection(data.index)
-                if len(common_index) > 0:
-                    corr, _ = pearsonr(total_power.loc[common_index], data['power'].loc[common_index])
-                    correlations.append({
-                        'channel': self.labels.get(channel, 'Unknown'),
-                        'correlation_with_total': corr
-                    })
-        return pd.DataFrame(correlations)
+                print(f"✅ Detalii salvate: {output_file}")
 
+            except Exception as e:
+                print(f" Eroare la {file}: {str(e)}")
 
-    def save_metrics(self, output_path):
-        """Salvează metricile într-un fișier CSV"""
+def get_consumption_for_day(channel_id, csv_dir, date_str):
+    import pandas as pd
+    from datetime import datetime
 
-        # Combinăm toate metricile într-un singur DataFrame
-        with open(output_path, 'w') as f:
-            for key, df in self.metrics_df.items():
-                f.write(f"\n### {key} ###\n")
-                df.to_csv(f, index=False)
+    channel_name = f"channel_{channel_id}"
+    csv_path = os.path.join(csv_dir, f"{channel_name}_downsampled_1H.csv")
 
-        print(f"✅ Metricile generale au fost salvate în: {output_path}")
+    if not os.path.exists(csv_path):
+        raise FileNotFoundError(f"CSV lipsă: {csv_path}")
 
-    def mape(self):
-        mask = (self.actuals != 0) & (self.actuals > 1)  # Evită împărțirea la zero și valori extrem de mici
-        return np.mean(np.abs((self.actuals[mask] - self.predictions[mask]) / self.actuals[mask])) * 100
+    df = pd.read_csv(csv_path, parse_dates=['timestamp'])
+    df['date'] = df['timestamp'].dt.date
+
+    target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+
+    filtered = df[df['date'] == target_date]
+    total = filtered['power'].sum()
+
+    return round(total, 2)

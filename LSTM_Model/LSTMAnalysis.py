@@ -146,7 +146,7 @@ class LSTMAnalyzer:
 
         # Threshold auto pe baza std dev
         diff_std = data['power_diff_24h'].std()
-        self.spike_event_threshold = 2 * diff_std
+        self.spike_event_threshold = 5 * diff_std
 
         print(f"Threshold auto pentru event_spike/drop: {self.spike_event_threshold}")
 

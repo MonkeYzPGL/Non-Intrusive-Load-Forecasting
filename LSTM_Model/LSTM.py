@@ -6,7 +6,7 @@ class LSTMModel(nn.Module):
         super().__init__()
         self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True, dropout=dropout)
         self.fc = nn.Linear(hidden_size, output_size)
-        self.activation = nn.ReLU()
+        self.activation = nn.Softplus()
 
     def forward(self, x):
         out, _ = self.lstm(x)

@@ -6,7 +6,7 @@ from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 from Analysis.DataAnalysis import DataAnalyzer
 from Analysis.PlotAnalysis import PlotAnalyzer
 from KAN_Model.KANAnalysis import KANAnalyzer
-from Metrics.Metrics import MetricsAnalyzer
+from Metrics.Metrics import metrics_channels
 from Analysis.AggregationAnalysis import AggregationAnalyzer
 from LSTM_Model.LSTMAnalysis import LSTMAnalyzer
 from Metrics.ErrorMetrics import ErrorMetricsAnalyzer
@@ -30,15 +30,14 @@ if __name__ == "__main__":
     # channels = valid_channels
 
     # 📌 Cream sub-directoarele pentru organizarea fișierelor
-    aggregated_dir = os.path.join(base_dir, "aggregated")
     downsampled_dir = os.path.join(base_dir, "downsampled")
     metrics_dir = os.path.join(base_dir, "metrics")
     predictii_dir = os.path.join(base_dir, "predictii")
     models_dir = os.path.join(base_dir, "modele_salvate")
-    predictii_viitor_dir = os.path.join(base_dir, "predictii_viitor")  # 📌 Director pentru predicții viitoare
+    predictii_viitor_dir = os.path.join(base_dir, "predictii_viitor")
     plots_dir = os.path.join(base_dir, "plots")
+    details_dir = os.path.join(base_dir, "details")
 
-    os.makedirs(aggregated_dir, exist_ok=True)
     os.makedirs(downsampled_dir, exist_ok=True)
     os.makedirs(metrics_dir, exist_ok=True)
     os.makedirs(predictii_dir, exist_ok=True)
@@ -85,6 +84,9 @@ if __name__ == "__main__":
     # # Calculăm diferențele între canale (delta)
     # # calculate_delta(downsampled_dir)
 
+    #generare metrici fiecare aparat
+    metrics_channels(input_dir=downsampled_dir, output_dir=details_dir)
+
     predictii_dir_lstm = os.path.join(base_dir, "predictii")
     predictii_dir_lstm = os.path.join(predictii_dir_lstm, "LSTM")
 
@@ -96,7 +98,7 @@ if __name__ == "__main__":
     lstm_model_dir = os.path.join(models_dir, "LSTM")
 
     """TEST LSTM"""
-    for i in range(2, 2):
+    for i in range(39, 39):
          channel_name = f"channel_{i}"
 
          channel_csv_path = os.path.join(downsampled_dir, f"{channel_name}_downsampled_1H.csv")
@@ -150,7 +152,7 @@ if __name__ == "__main__":
 
     """FORECAST"""
     # === Config de baza ===
-    target_day = "2014-11-20"
+    target_day = "2014-12-21"
     window_size = 168
 
     # === Folder root pentru predictii ===
@@ -173,7 +175,7 @@ if __name__ == "__main__":
     output_csv = os.path.join(subdirs["combinat"], "forecast_total.csv")
     output_channel_csv_LSTM = subdirs["csv_LSTM"]
     plots_output_LSTM = subdirs["plots_LSTM"]
-    metrics_output_LSTM = subdirs["metrics_LSTM"]  # optional
+    metrics_output_LSTM = subdirs["metrics_LSTM"]
 
     # === Date reale pentru canalul 1 ===
     channel_1_path = os.path.join(downsampled_dir, "channel_1_downsampled_1H.csv")
@@ -188,7 +190,7 @@ if __name__ == "__main__":
     total_pred = []
     total_actual = []
 
-    for i in range(2, 54):
+    for i in range(39, 40):
         channel_name = f"channel_{i}"
         channel_csv_path = os.path.join(downsampled_dir, f"{channel_name}_downsampled_1H.csv")
         lstm_model_path = os.path.join(lstm_model_dir, f"lstm_model_{channel_name}.pth")
@@ -205,7 +207,6 @@ if __name__ == "__main__":
             )
 
             forecaster.load_recent_data()
-            forecaster.load_model_and_scalers()
             df_forecast = forecaster.predict_day(target_day)
 
             combined_df[f"{channel_name}_predicted"] = df_forecast["predicted_power"]
@@ -272,10 +273,10 @@ if __name__ == "__main__":
     metrics_dir_kan = os.path.join(metrics_dir_kan, "KAN")
     models_dir_kan = os.path.join(base_dir, "modele_salvate", "KAN")
     plots_dir_kan = os.path.join(base_dir, "plots", "KAN")
-    scalers_dir = os.path.join(base_dir, "modele_salvate", "KAN", "scalers")
-    os.makedirs(scalers_dir, exist_ok=True)
+    scalers_dir_KAN = os.path.join(base_dir, "modele_salvate", "KAN", "scalers")
+    os.makedirs(scalers_dir_KAN, exist_ok=True)
     #  Iteram prin toate canalele
-    for i in range(2, 2):
+    for i in range(54, 54):
         channel_name = f"channel_{i}"
         print(f"\n📌 Procesare KAN pentru: {channel_name}")
 
@@ -294,8 +295,8 @@ if __name__ == "__main__":
             plot_save_path = os.path.join(plots_dir_kan, f"plot_{channel_name}_KAN.png")
 
             # Initializam si rulam modelul
-            kan_analyzer = KANAnalyzer(csv_path=channel_csv_path, channel_number = i)
-            kan_analyzer.preprocess_data(scalers_dir=scalers_dir)
+            kan_analyzer = KANAnalyzer(csv_path=channel_csv_path, channel_number = i, scaler_dir=scalers_dir_KAN,)
+            kan_analyzer.preprocess_data( )
             kan_analyzer.train(model_path=kan_model_path)
 
             # Predictii

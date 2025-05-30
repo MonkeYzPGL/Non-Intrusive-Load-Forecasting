@@ -129,7 +129,6 @@ class LSTMForecaster:
         df.set_index('timestamp', inplace=True)
         df = self.generate_features(df)
         self.context_df = df.tail(self.window_size).copy()
-        self.context_df = df.tail(self.window_size).copy()
         self.selected_features = [col for col in self.context_df.columns if col != "power_diff_24h"]
         print(f"Context de forecast pregatit din ultimele {self.window_size} valori cu {len(self.selected_features)} caracteristici.")
 

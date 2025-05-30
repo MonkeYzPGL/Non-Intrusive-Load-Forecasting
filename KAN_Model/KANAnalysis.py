@@ -28,7 +28,7 @@ class TimeSeriesDataset(Dataset):
 
 class KANAnalyzer:
     timing_csv = "training_timing_kan.csv"
-    def __init__(self, csv_path, window_size=168, hidden_size=256, batch_size=32, learning_rate=0.001, channel_number = 0):
+    def __init__(self, csv_path, window_size=168, hidden_size=512, batch_size=32, learning_rate=0.001, channel_number = 0, scaler_dir = None,):
         self.csv_path = csv_path
         self.window_size = window_size
         self.hidden_size = hidden_size
@@ -36,6 +36,16 @@ class KANAnalyzer:
         self.learning_rate = learning_rate
         self.channel_number = channel_number
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.scaler_dir = scaler_dir
+
+        # Cream path-urile pentru scalere
+        if self.scaler_dir is not None:
+            os.makedirs(self.scaler_dir, exist_ok=True)
+            self.scaler_path_X = os.path.join(self.scaler_dir, f"channel_{self.channel_number}_X_scaler.pkl")
+            self.scaler_path_y = os.path.join(self.scaler_dir, f"channel_{self.channel_number}_y_scaler.pkl")
+        else:
+            self.scaler_path_X = None
+            self.scaler_path_y = None
 
         self.scaler = MinMaxScaler()
         self.scaler_y = MinMaxScaler()
@@ -76,7 +86,7 @@ class KANAnalyzer:
             y.append(data[i + self.window_size + horizon - 1][0])
         return np.array(X, dtype=np.float32), np.array(y, dtype=np.float32).reshape(-1, 1)
 
-    def preprocess_data(self, scalers_dir = None):
+    def preprocess_data(self):
         # Citirea datelor
         data = pd.read_csv(self.csv_path)
         data['timestamp'] = pd.to_datetime(data['timestamp'])
@@ -96,7 +106,7 @@ class KANAnalyzer:
         data["day_cos"] = np.cos(2 * np.pi * data["day_of_week"] / 7)
 
         # Aplicare lag-uri
-        lags = [1, 2, 3, 6, 12, 24, 48, 168]
+        lags = [1, 2, 3, 6, 12, 24, 48,72, 168, 336, 672]
         for lag in lags:
             data[f'lag_{lag}h'] = data['power'].shift(lag)
 
@@ -111,7 +121,6 @@ class KANAnalyzer:
         data['spike_flag'] = (data['zscore_24h'].abs() > 2).astype(int)
 
         data['rolling_skew_24h'] = data['power'].rolling(24).skew()
-        data['rolling_kurt_24h'] = data['power'].rolling(24).kurt()
 
         data['grad_3h'] = data['power'].rolling(3).apply(lambda x: x.iloc[-1] - x.iloc[0])
         data['grad_6h'] = data['power'].rolling(6).apply(lambda x: x.iloc[-1] - x.iloc[0])
@@ -120,14 +129,12 @@ class KANAnalyzer:
         data['delta_power'] = data['power'].diff().shift(1)
         data['rolling_mean_12h'] = data['power'].rolling('12h').mean().shift(1)
         data['rolling_std_12h'] = data['power'].rolling('12h').std().shift(1)
-        data['rolling_max_12h'] = data['power'].rolling('12h').max().shift(1)
         data['rolling_mean_24h'] = data['power'].rolling('24h').mean().shift(1)
         data['rolling_min_12h'] = data['power'].rolling('12h').min().shift(1)
         data['rolling_median_12h'] = data['power'].rolling('12h').median().shift(1)
         data['rolling_max_24h'] = data['power'].rolling('24h').max().shift(1)
         data['rolling_min_24h'] = data['power'].rolling('24h').min().shift(1)
         data['rolling_std_24h'] = data['power'].rolling('24h').std().shift(1)
-        data['rolling_sum_24h'] = data['power'].rolling(24).sum().shift(1)
 
         data["power_diff_24h"] = data["power"] - data["power"].shift(24)
 
@@ -143,7 +150,6 @@ class KANAnalyzer:
 
         data['acf_1h'] = data['power'].rolling(24).apply(
             lambda x: acf(x, nlags=1, fft=True)[1] if len(x.dropna()) == 24 else 0)
-        data['pacf_1h'] = data['power'].rolling(24).apply(lambda x: pacf(x, nlags=1)[1] if len(x.dropna()) == 24 else 0)
 
         # Umplem valorile lipsa
         data = data.interpolate(method='linear', limit_direction='both')
@@ -164,18 +170,16 @@ class KANAnalyzer:
         test_data = data.iloc[train_size + val_size:]
 
         # Selectăm caracteristicile pentru scalare
-        self.selected_features = ['power', 'delta_power', 'day_of_week', 'hour_of_day', 'is_weekend', 'month', 'season',
-                                  'lag_1h', 'lag_2h', 'lag_3h', 'lag_6h', 'lag_12h', 'lag_24h', 'lag_48h', 'lag_168h',
-                                  'hour_sin', 'hour_cos', 'day_sin', 'day_cos',
-                                  'roc_1h', 'roc_3h', 'roc_6h', 'roc_12h', 'roc_24h', 'zscore_24h', 'spike_flag',
-                                  'rolling_skew_24h', 'rolling_kurt_24h', 'grad_3h', 'grad_6h',
-                                  'rolling_mean_12h', 'rolling_std_12h', 'rolling_max_12h', 'rolling_mean_24h',
-                                  'rolling_min_12h', 'rolling_max_24h', 'rolling_std_24h', 'power_diff_24h',
-                                  'acf_1h', 'pacf_1h', 'event_spike', 'event_drop',
-                                  'rolling_sum_24h',
-                                  'rolling_min_24h',
-                                  'rolling_max_24h',
-                                  'is_spike_context'
+        self.selected_features = ['power', 'day_of_week', 'hour_of_day', 'is_weekend', 'month', 'season',
+                                   'hour_sin', 'hour_cos', 'day_sin', 'day_cos', 'lag_1h', 'lag_2h',
+                                   'lag_3h', 'lag_6h', 'lag_12h', 'lag_24h', 'lag_48h','lag_72h', 'lag_168h', 'lag_336h', 'lag_672h',
+                                   'roc_1h', 'roc_3h', 'roc_6h', 'roc_12h', 'roc_24h', 'zscore_24h',
+                                   'spike_flag', 'rolling_skew_24h', 'grad_3h',
+                                   'grad_6h', 'delta_power', 'rolling_mean_12h', 'rolling_std_12h',
+                                   'rolling_mean_24h', 'rolling_min_12h',
+                                   'rolling_median_12h', 'rolling_max_24h', 'rolling_min_24h',
+                                   'rolling_std_24h', 'event_spike',
+                                   'event_drop', 'is_spike_context', 'acf_1h'
                                   ]
 
         # Aplicăm scalarea DOAR pe setul de train pt. a evita data leakage
@@ -210,18 +214,12 @@ class KANAnalyzer:
         self.y = self.y.float().to(self.device)
         self.timestamps = test_data.index[self.window_size:].tolist()  # necesar pt predict()
 
-        if scalers_dir is not None:
-            os.makedirs(scalers_dir, exist_ok=True)
-            channel_name = os.path.basename(self.csv_path).split("_")[0]
-            scaler_X_path = os.path.join(scalers_dir, f"{channel_name}_scaler_X.pkl")
-            scaler_y_path = os.path.join(scalers_dir, f"{channel_name}_scaler_y.pkl")
+        if self.scaler_path_X is not None and self.scaler_path_y is not None:
+            joblib.dump(self.scaler, self.scaler_path_X)
+            joblib.dump(self.scaler_y, self.scaler_path_y)
+            print(f" Scalere salvate pentru channel_{self.channel_number}: {self.scaler_path_X}, {self.scaler_path_y}")
 
-            joblib.dump(self.scaler, scaler_X_path)
-            joblib.dump(self.scaler_y, scaler_y_path)
-
-            print(f"✅ Scalerii salvati pentru {channel_name} la: {scaler_X_path} si {scaler_y_path}")
-
-    def train(self, epochs=100, patience=10, model_path=None):
+    def train(self, epochs=100, patience=15, model_path=None):
         input_size = self.X.shape[1]
         self.model = KAN(
             layers_hidden=[input_size, self.hidden_size, 1]
@@ -319,35 +317,35 @@ class KANAnalyzer:
         rows = []
 
         with torch.no_grad():
-            for i in range(len(self.test_loader.dataset)):
-                X_sample, y_true = self.test_loader.dataset[i]
+            for batch_idx, (X_batch, y_batch) in enumerate(self.test_loader):
+                X_batch = X_batch.to(self.device).float()
+                y_batch = y_batch.to(self.device)
 
-                # Conversie la torch tensor si mutare pe device
-                X_sample = torch.tensor(X_sample, dtype=torch.float32).to(self.device).unsqueeze(0)
-                y_true = y_true.item()
+                # Predictii
+                y_pred = self.model(X_batch).cpu().numpy()  # (batch, 24)
+                y_batch = y_batch.cpu().numpy()  # (batch, 24)
 
-                y_pred = self.model(X_sample).cpu().numpy()[0][0]
+                for i in range(len(y_pred)):
+                    pred_fill = np.zeros((24, len(self.selected_features)))
+                    actual_fill = np.zeros((24, len(self.selected_features)))
 
-                # reconstruim scalarea
-                pred_fill = np.zeros((1, len(self.selected_features)))
-                actual_fill = np.zeros((1, len(self.selected_features)))
+                    pred_fill[:, 0] = y_pred[i]
+                    actual_fill[:, 0] = y_batch[i]
 
-                pred_fill[0, 0] = y_pred
-                actual_fill[0, 0] = y_true
+                    y_pred_inv = self.scaler.inverse_transform(pred_fill)[:, 0]
+                    y_pred_inv = np.clip(y_pred_inv, 0, None)
+                    y_actual_inv = self.scaler.inverse_transform(actual_fill)[:, 0]
 
-                y_pred_inv = self.scaler.inverse_transform(pred_fill)[0, 0]
-                y_actual_inv = self.scaler.inverse_transform(actual_fill)[0, 0]
-                y_pred_inv = max(0, y_pred_inv)
+                    timestamp = self.test_data.index[self.window_size + batch_idx * self.batch_size + i]
 
-                timestamp = self.test_data.index[self.window_size + i]
+                    row = {
+                        "timestamp": timestamp,
+                        "prediction": y_pred_inv[0],  # prima ora
+                        "actual": y_actual_inv[0]  # prima ora
+                    }
 
-                row = {
-                    "timestamp": timestamp,
-                    "prediction": y_pred_inv,
-                    "actual": y_actual_inv
-                }
-
-                rows.append(row)
+                    rows.append(row)
 
         df_results = pd.DataFrame(rows)
+
         return df_results
