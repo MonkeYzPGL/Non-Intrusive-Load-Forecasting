@@ -39,7 +39,18 @@ def metrics_channels(input_dir, output_dir):
             except Exception as e:
                 print(f" Eroare la {file}: {str(e)}")
 
-def get_consumption_for_day(channel_id, csv_dir, date_str):
+def load_labels(labels_file):
+    labels = {}
+    with open(labels_file, 'r') as f:
+        for line in f:
+            parts = line.strip().split()
+            if len(parts) >= 2:
+                channel_id = int(parts[0])
+                label = ' '.join(parts[1:])
+                labels[channel_id] = label
+    return labels
+
+def get_consumption_for_day(channel_id, csv_dir, date_str, labels_file):
     import pandas as pd
     from datetime import datetime
 
@@ -47,14 +58,21 @@ def get_consumption_for_day(channel_id, csv_dir, date_str):
     csv_path = os.path.join(csv_dir, f"{channel_name}_downsampled_1H.csv")
 
     if not os.path.exists(csv_path):
-        raise FileNotFoundError(f"CSV lipsă: {csv_path}")
+        raise FileNotFoundError(f"CSV lipsa: {csv_path}")
 
     df = pd.read_csv(csv_path, parse_dates=['timestamp'])
     df['date'] = df['timestamp'].dt.date
 
     target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
-
     filtered = df[df['date'] == target_date]
     total = filtered['power'].sum()
 
-    return round(total, 2)
+    labels = load_labels(labels_file)
+    appliance_name = labels.get(channel_id, channel_name)
+
+    return {
+        "channel": channel_name,
+        "appliance_name": appliance_name,
+        "date": date_str,
+        "total_consumption": round(total, 2)
+    }

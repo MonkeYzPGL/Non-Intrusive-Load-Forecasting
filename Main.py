@@ -3,8 +3,6 @@ import torch
 from matplotlib import pyplot as plt
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 
-from Analysis.DataAnalysis import DataAnalyzer
-from Analysis.PlotAnalysis import PlotAnalyzer
 from KAN_Model.KANAnalysis import KANAnalyzer
 from Metrics.Metrics import metrics_channels
 from Analysis.AggregationAnalysis import AggregationAnalyzer
@@ -85,7 +83,7 @@ if __name__ == "__main__":
     # # calculate_delta(downsampled_dir)
 
     #generare metrici fiecare aparat
-    metrics_channels(input_dir=downsampled_dir, output_dir=details_dir)
+    #metrics_channels(input_dir=downsampled_dir, output_dir=details_dir)
 
     predictii_dir_lstm = os.path.join(base_dir, "predictii")
     predictii_dir_lstm = os.path.join(predictii_dir_lstm, "LSTM")
@@ -201,7 +199,7 @@ if __name__ == "__main__":
             forecaster = LSTMForecaster(
                 model_path=lstm_model_path,
                 csv_path=channel_csv_path,
-                window_size=window_size,
+                window_size=168,
                 scaler_dir=scalers_dir_LSTM,
                 channel_number=i,
             )

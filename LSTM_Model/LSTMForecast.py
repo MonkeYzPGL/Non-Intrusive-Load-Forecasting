@@ -135,18 +135,26 @@ class LSTMForecaster:
     def predict_day(self, target_day):
         self.load_model_and_scalers()
 
-        # Incarcam datele pentru ziua tinta
+        # Incarcam toate datele si generam feature-urile
         df = pd.read_csv(self.csv_path)
         df['timestamp'] = pd.to_datetime(df['timestamp'])
         df.set_index('timestamp', inplace=True)
         df = self.generate_features(df)
-        day_df = df.loc[target_day]
 
-        if day_df.shape[0] != 24:
-            raise ValueError(f"Ziua {target_day} nu are 24 de puncte de date.")
+        # Definim intervalul: 168h inainte + cele 24h ale target_day
+        start_time = pd.to_datetime(target_day) - pd.Timedelta(hours=self.window_size)
+        end_time = pd.to_datetime(target_day) + pd.Timedelta(hours=23)
+
+        context_and_day = df.loc[start_time:end_time]
+
+        if context_and_day.shape[0] != self.window_size + 24:
+            raise ValueError(f"Intervalul {start_time} - {end_time} nu are suficiente puncte de date.")
+
+        # Separam inputul (168h) si targetul (24h)
+        input_features = context_and_day[self.selected_features].iloc[:self.window_size]
+        day_df = context_and_day.iloc[self.window_size:]
 
         # Scalez input-ul
-        input_features = day_df[self.selected_features].fillna(0)
         input_scaled = self.scaler_X.transform(input_features)
         input_tensor = torch.tensor(input_scaled, dtype=torch.float32).unsqueeze(0).to(self.device)
 

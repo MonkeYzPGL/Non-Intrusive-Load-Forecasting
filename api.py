@@ -97,14 +97,32 @@ def get_correlogram():
 @app.route("/consumption/<int:channel_id>/<date_str>", methods=["GET"])
 def get_day_consumption(channel_id, date_str):
     try:
-        total = get_consumption_for_day(channel_id, DOWNSAMPLED_DIR, date_str)
-        return jsonify({
-            "channel": f"channel_{channel_id}",
-            "date": date_str,
-            "total_consumption": total
-        })
+        result = get_consumption_for_day(
+            channel_id=channel_id,
+            csv_dir=DOWNSAMPLED_DIR,
+            date_str=date_str,
+            labels_file=os.path.join(BASE_DIR, "labels.dat")
+        )
+        return jsonify(result)
+    except FileNotFoundError as e:
+        return jsonify({"error": str(e)}), 404
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+from flask import Flask, request, jsonify, send_file
+import os
+
+@app.route("/csv/<int:channel_id>", methods=["GET"])
+def get_csv_for_channel(channel_id):
+    channel_name = f"channel_{channel_id}"
+    csv_path = os.path.join(DOWNSAMPLED_DIR, f"{channel_name}_downsampled_1H.csv")
+
+    if not os.path.exists(csv_path):
+        return jsonify({"error": f"Fisierul CSV pentru {channel_name} nu exista."}), 404
+
+    return send_file(csv_path, mimetype='text/csv')
 
 
 if __name__ == "__main__":
