@@ -7,6 +7,7 @@ import pandas as pd
 import numpy as np
 import torch.nn as nn
 from matplotlib import pyplot as plt
+from sklearn.ensemble import RandomForestClassifier
 from statsmodels.tools.sm_exceptions import ValueWarning
 from statsmodels.tsa.stattools import acf, pacf
 from torch.utils.data import DataLoader, Dataset
@@ -49,6 +50,14 @@ class LSTMAnalyzer:
             self.scaler_path_X = None
             self.scaler_path_y = None
 
+        base_dir = os.path.dirname(self.scaler_dir) if self.scaler_dir else "."
+
+        os.makedirs(os.path.join(base_dir, "classifier"), exist_ok=True)
+        os.makedirs(os.path.join(base_dir, "dominant_value"), exist_ok=True)
+
+        self.classifier_path = os.path.join(base_dir, "classifier", f"channel_{self.channel_number}_classifier.pkl")
+        self.dominant_path = os.path.join(base_dir, "dominant_value", f"channel_{self.channel_number}_dominant_value.pkl")
+
         self.preprocess_data()
 
         self.model = LSTMModel(
@@ -77,11 +86,18 @@ class LSTMAnalyzer:
 
         return threshold
 
-    def custom_loss(self, y_pred, y_true, alpha=3):
+    def custom_loss(self, y_pred, y_true, alpha=3, beta=5):
         base_loss = self.criterion(y_pred, y_true)
+
+        # Detectam spike-uri (ca inainte)
         spike_mask = (torch.abs(y_true - y_pred) > self.threshold).float()
         spike_loss = (spike_mask * torch.abs(y_true - y_pred)).mean()
-        return base_loss + alpha * spike_loss
+
+        # Accent special pe eroarea din prima ora (index 0)
+        primary_hour_error = torch.abs(y_true[:, 0] - y_pred[:, 0]).mean()
+
+        # Total loss = pierdere generala + spike-uri + penalizare pe prima ora
+        return base_loss + alpha * spike_loss + beta * primary_hour_error
 
     def remove_highly_correlated_features(self, data, features, threshold=0.95):
         corr_matrix = data[features].corr().abs()
@@ -159,12 +175,11 @@ class LSTMAnalyzer:
         # Umplem valorile lipsa
         data = data.interpolate(method='linear', limit_direction='both')
 
-        spike_data = data[data['event_spike'] == 1]
-        drop_data = data[data['event_drop'] == 1]
-
-        # Adauga-le de 2x (experimenteaza cu 2 sau 3)
-        data = pd.concat([data, spike_data, drop_data])
-        data = data.sort_index()
+        # Prag general adaptiv
+        threshold = np.percentile(data['power'], 90)
+        data['is_on'] = (data['power'] > threshold).astype(int)
+        data['event_on'] = ((data['is_on'] == 1) & (data['is_on'].shift(1) == 0)).astype(int)
+        data['context_on_window'] = data['is_on'].rolling(window=3, center=True).max().fillna(0).astype(int)
 
         # Împărțirea datelor înainte de scalare
         train_size = int(0.8 * len(data))
@@ -184,7 +199,7 @@ class LSTMAnalyzer:
                                    'rolling_mean_24h', 'rolling_min_12h',
                                    'rolling_median_12h', 'rolling_max_24h', 'rolling_min_24h',
                                    'rolling_std_24h', 'event_spike',
-                                   'event_drop', 'is_spike_context', 'acf_1h'
+                                   'event_drop', 'is_spike_context', 'acf_1h', 'is_on', 'event_on', 'context_on_window'
                                   ]
 
         #data, self.selected_features = self.remove_highly_correlated_features(data, self.selected_features)
@@ -210,10 +225,15 @@ class LSTMAnalyzer:
         self.val_loader = DataLoader(TimeSeriesDataset(X_val, y_val), batch_size=self.batch_size, shuffle=False)
         self.test_loader = DataLoader(TimeSeriesDataset(X_test, y_test), batch_size=self.batch_size, shuffle=False)
 
-        self.threshold = self.calculate_spike_threshold(train_data, method="std", k=1)
+        self.threshold = self.calculate_spike_threshold(train_data, method="std", k=2)
         print(f"Threshold spike auto-calculat: {self.threshold}")
 
         self.test_data = test_data.copy()
+
+        data['is_active'] = (data['power'] > threshold).astype(int)
+
+        dominant_value = data['power'].mode()[0]
+        joblib.dump(dominant_value, self.dominant_path)
 
         if self.scaler_path_X is not None and self.scaler_path_y is not None:
             joblib.dump(self.scaler, self.scaler_path_X)
@@ -232,9 +252,13 @@ class LSTMAnalyzer:
 
     def create_sequences(self, data, horizon=24):
         X, y = [], []
-        for i in range(len(data) - self.window_size - horizon):
-            X.append(data[i:i + self.window_size])
-            y.append(data[i + self.window_size: i + self.window_size + horizon, 0])
+        for i in range(len(data) - self.window_size - horizon + 1):
+            seq = data[i: i + self.window_size]
+            label = data[i + self.window_size: i + self.window_size + horizon, 0]
+
+            X.append(seq)
+            y.append(label)
+
         return torch.tensor(np.array(X), dtype=torch.float32), torch.tensor(np.array(y), dtype=torch.float32)
 
     def train(self, epochs=100, patience=15, model_path=None):
@@ -244,6 +268,23 @@ class LSTMAnalyzer:
         patience_counter = 0
 
         start_time = time.time()
+
+        df = pd.read_csv(self.csv_path, parse_dates=['timestamp'])
+        df['timestamp'] = pd.to_datetime(df['timestamp'])
+        df.set_index('timestamp', inplace=True)
+        df['power'] = pd.to_numeric(df['power'], errors='coerce').fillna(0)
+        df['hour_of_day'] = df.index.hour
+        df['lag_1h'] = df['power'].shift(1)
+        df['is_active'] = (df['power'] > 2.0).astype(int)
+        df.dropna(subset=['lag_1h'], inplace=True)
+
+        clf_features = df[['hour_of_day', 'lag_1h']]
+        clf_labels = df['is_active']
+
+        clf = RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=9)
+        clf.fit(clf_features, clf_labels)
+        joblib.dump(clf, self.classifier_path)
+        print(f" Clasificator salvat la: {self.classifier_path}")
 
         for epoch in range(epochs):
             self.model.train()

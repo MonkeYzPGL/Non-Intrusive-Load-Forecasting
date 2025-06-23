@@ -3,7 +3,8 @@ import os
 
 from flask_cors import CORS
 
-from Analysis.PlotAnalysis import generate_histogram, generate_correlogram
+from Analysis.ACF import generate_acf_plot
+from Analysis.PlotAnalysis import generate_histogram
 from Metrics.Metrics import metrics_channels, get_consumption_for_day
 import pandas as pd
 
@@ -76,24 +77,6 @@ def get_histogram(channel_id):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-
-@app.route("/correlogram", methods=["GET"])
-def get_correlogram():
-    output_file = os.path.join(HISTOGRAM_DIR, "correlogram.png")
-    if os.path.exists(output_file):
-        return send_file(output_file, mimetype="image/png")
-
-    try:
-        result_path = generate_correlogram(
-            csv_dir=DOWNSAMPLED_DIR,
-            output_path=output_file,
-            labels_file=os.path.join(BASE_DIR, "labels.dat")
-        )
-        return send_file(result_path, mimetype="image/png")
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
 @app.route("/consumption/<int:channel_id>/<date_str>", methods=["GET"])
 def get_day_consumption(channel_id, date_str):
     try:
@@ -111,9 +94,6 @@ def get_day_consumption(channel_id, date_str):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-from flask import Flask, request, jsonify, send_file
-import os
-
 @app.route("/csv/<int:channel_id>", methods=["GET"])
 def get_csv_for_channel(channel_id):
     channel_name = f"channel_{channel_id}"
@@ -124,6 +104,26 @@ def get_csv_for_channel(channel_id):
 
     return send_file(csv_path, mimetype='text/csv')
 
+
+@app.route("/acf/<int:channel_id>", methods=["GET"])
+def get_acf_plot(channel_id):
+    try:
+        csv_dir = os.path.join(BASE_DIR, "downsampled", "1H")
+        acf_output_dir = os.path.join(BASE_DIR, "acf")
+        label_path = os.path.join(BASE_DIR, "labels.dat")
+
+        plot_path = generate_acf_plot(
+            channel_id=channel_id,
+            csv_dir=csv_dir,
+            output_dir=acf_output_dir,
+            label_path=label_path
+        )
+
+        return send_file(plot_path, mimetype="image/png")
+    except FileNotFoundError as e:
+        return jsonify({"error": str(e)}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
     app.run(debug=True)

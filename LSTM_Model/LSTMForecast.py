@@ -133,6 +133,7 @@ class LSTMForecaster:
         print(f"Context de forecast pregatit din ultimele {self.window_size} valori cu {len(self.selected_features)} caracteristici.")
 
     def predict_day(self, target_day):
+        self.load_recent_data()
         self.load_model_and_scalers()
 
         # Incarcam toate datele si generam feature-urile
@@ -154,9 +155,20 @@ class LSTMForecaster:
         input_features = context_and_day[self.selected_features].iloc[:self.window_size]
         day_df = context_and_day.iloc[self.window_size:]
 
+        print("Valori input (ne-scalate):")
+        print("Min:", input_features.min().min())
+        print("Max:", input_features.max().max())
+
+        print("Domeniu scaler_X:")
+        print("Min:", self.scaler_X.data_min_.min())
+        print("Max:", self.scaler_X.data_max_.max())
+
         # Scalez input-ul
         input_scaled = self.scaler_X.transform(input_features)
         input_tensor = torch.tensor(input_scaled, dtype=torch.float32).unsqueeze(0).to(self.device)
+
+        assert input_tensor.shape[1:] == (self.window_size, len(self.selected_features)), \
+            f"Forma inputului este incorecta: {input_tensor.shape}"
 
         # Predictie
         with torch.no_grad():
@@ -164,6 +176,7 @@ class LSTMForecaster:
 
         # Denormalizare
         predictions_real = self.scaler_y.inverse_transform(predictions.reshape(-1, 1)).flatten()
+        predictions_real = np.maximum(predictions_real, 0)
 
         # Organizare rezultate
         df_results = pd.DataFrame({

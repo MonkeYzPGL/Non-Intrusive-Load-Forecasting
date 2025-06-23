@@ -2,6 +2,8 @@ import os
 import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
+from statsmodels.tsa.seasonal import seasonal_decompose
+
 
 def load_labels(labels_file):
     labels = {}
@@ -45,35 +47,27 @@ def generate_histogram(channel_id, csv_dir, output_dir, labels_file):
 
     return output_path
 
-def generate_correlogram(csv_dir, output_path, labels_file):
-    labels = load_labels(labels_file)
-    combined_data = pd.DataFrame()
+def decomposition_plot(input_path, output_dir, channel_name):
 
-    for file in os.listdir(csv_dir):
-        if file.endswith("_downsampled_1H.csv"):
-            try:
-                channel_id = int(file.split("_")[1])  # ex: channel_39
-                label = labels.get(channel_id, f"channel_{channel_id}")
-                csv_path = os.path.join(csv_dir, file)
-                df = pd.read_csv(csv_path, parse_dates=['timestamp'])
+    df = pd.read_csv(input_path)
+    df['timestamp'] = pd.to_datetime(df['timestamp'])
+    df.set_index('timestamp', inplace=True)
 
-                # Includem doar coloana 'power' si redenumim
-                combined_data[label] = df['power'].fillna(0).reset_index(drop=True)
+    decomp = seasonal_decompose(df['power'], model='additive', period=24*7)
 
-            except Exception as e:
-                print(f"❌ Eroare la {file}: {str(e)}")
-
-    if combined_data.empty:
-        raise ValueError("Nu s-au incarcat date valide.")
-
-    plt.figure(figsize=(14, 12))
-    sns.heatmap(combined_data.corr(), annot=True, fmt=".2f", cmap="coolwarm", linewidths=0.5)
-    plt.title("Correlogram of Appliance Power Consumption")
+    fig, axes = plt.subplots(4, 1, figsize=(15, 10), sharex=True)
+    decomp.observed.plot(ax=axes[0], title='Observed')
+    decomp.trend.plot(ax=axes[1], title='Trend')
+    decomp.seasonal.plot(ax=axes[2], title='Seasonality (weekly)')
+    decomp.resid.plot(ax=axes[3], title='Residuals')
     plt.tight_layout()
 
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    plt.savefig(output_path)
-    plt.close()
+    os.makedirs(output_dir, exist_ok=True)
+    output_path = os.path.join(output_dir, f"{channel_name}_decomposition.png")
+    fig.savefig(output_path)
+    plt.close(fig)
 
-    print(f"✅ Corelograma salvata in: {output_path}")
+    print(f" Decomposition plot salvat: {output_path}")
     return output_path
+
+
