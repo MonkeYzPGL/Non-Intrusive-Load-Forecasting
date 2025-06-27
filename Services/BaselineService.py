@@ -1,4 +1,9 @@
+import os
+
 import pandas as pd
+from matplotlib import pyplot as plt
+from statsmodels.graphics.tsaplots import plot_acf
+
 
 class BaselineGenerator:
 
@@ -30,7 +35,7 @@ class BaselineGenerator:
         print(f" Baseline Moving Average salvat: {output_csv}")
 
     @staticmethod
-    def seasonal_hourly(input_csv, output_csv, history_days=7):
+    def seasonal_hourly(input_csv, output_csv, history_days=5):
         df = pd.read_csv(input_csv)
         df['timestamp'] = pd.to_datetime(df['timestamp'])
         df = df.sort_values('timestamp')

@@ -1,27 +1,22 @@
-import numpy as np
-import torch
+import traceback
+
 from matplotlib import pyplot as plt
-from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 import pandas as pd
-from Analysis.DataAnalysis import DataAnalyzer
-from Analysis.PlotAnalysis import decomposition_plot
-from KAN_Model.KANAnalysis import KANAnalyzer
-from Metrics.Metrics import metrics_channels
-from Analysis.AggregationAnalysis import AggregationAnalyzer
-from LSTM_Model.LSTMAnalysis import LSTMAnalyzer
-from Metrics.ErrorMetrics import ErrorMetricsAnalyzer
+from Services.DetailsService import decomposition_plot
+from ModelsAnalysis.KANAnalysis import KANAnalyzer
+from Services.AuxiliarClasses.KAN_Model.KANForecast import KANForecaster
+from Services.ErrorMetricsService import ErrorMetricsAnalyzer
 import os
-from Analysis.Baseline import BaselineGenerator
+from Services.BaselineService import BaselineGenerator
 
 #from KAN_Model.KANAnalysis import KANAnalyzer
-from LSTM_Model.LSTMForecast import LSTMForecaster
-
+from Transformer_Model.TransformerAnalysis import TransformerAnalyzer
 
 if __name__ == "__main__":
     # Setam directorul de baza
     base_dir = r'C:\Users\elecf\Desktop\Licenta\Date\UK-DALE-disaggregated\house_1'
     #labels_file = os.path.join(base_dir, 'labels.dat')
-    #
+
     #  Detectam automat canalele din fisierele .dat
     valid_channels = []
     for f in os.listdir(base_dir):
@@ -83,8 +78,6 @@ if __name__ == "__main__":
     downsampled_dir = os.path.join(downsampled_dir, "1H")
     # aggregation_analyzer.save_downsampled_data(freq='1h', output_dir=downsampled_dir)
     # aggregation_analyzer.generate_aggregated(downsampled_dir)
-    # # Calculăm diferențele între canale (delta)
-    # # calculate_delta(downsampled_dir)
 
     #generare metrici fiecare aparat
     #metrics_channels(input_dir=downsampled_dir, output_dir=details_dir)
@@ -114,7 +107,7 @@ if __name__ == "__main__":
     os.makedirs(baseline_seasonal_dir, exist_ok=True)
 
     # === BASELINE: Moving Average (24h) si Last Week (168h)
-    for i in range(1, 54):
+    for i in range(1, 1):
         channel_name = f"channel_{i}"
         input_csv = os.path.join(downsampled_dir, f"{channel_name}_downsampled_1H.csv")
 
@@ -147,99 +140,103 @@ if __name__ == "__main__":
 
     output_comparatie = os.path.join(baseline_dir, "comparatie_baseline.csv")
 
+    metrics_to_extract = ["MAE", "RMSE", "MAPE", "SMAPE", "R2 Score"]
     rows = []
 
     for i in range(1, 1):
         channel = f"channel_{i}"
+        row = {"Channel": channel}
+
+        for name, folder, prefix in [
+            ("MovingAvg", baseline_day_dir, "metrics_movingavg"),
+            ("LastWeek", baseline_week_dir, "metrics_lastweek"),
+            ("Seasonal", baseline_seasonal_dir, "metrics_seasonal"),
+        ]:
+            filepath = os.path.join(folder, f"{prefix}_{channel}.csv")
+            try:
+                df = pd.read_csv(filepath)
+                for metric in metrics_to_extract:
+                    val = df[df["Metric"] == metric]["Value"].values[0]
+                    row[f"{metric}_{name}"] = val
+            except Exception as e:
+                print(f"Eroare la {filepath}: {e}")
+                for metric in metrics_to_extract:
+                    row[f"{metric}_{name}"] = None
+
+        rows.append(row)
+
+    output_path = os.path.join(baseline_dir, "comparatie_baseline.csv")
+    pd.DataFrame(rows).to_csv(output_path, index=False)
+    print(f"Comparatie completa salvata: {output_path}")
+
+    """ KAN """
+    predictii_dir_kan = os.path.join(base_dir, "predictii")
+    predictii_dir_kan = os.path.join(predictii_dir_kan, "KAN")
+
+    metrics_dir_kan = os.path.join(base_dir, "metrics")
+    metrics_dir_kan = os.path.join(metrics_dir_kan, "KAN")
+    models_dir_kan = os.path.join(base_dir, "modele_salvate", "KAN")
+    plots_dir_kan = os.path.join(base_dir, "plots", "KAN")
+    scalers_dir_KAN = os.path.join(base_dir, "modele_salvate", "KAN", "scalers")
+    os.makedirs(scalers_dir_KAN, exist_ok=True)
+    #  Iteram prin toate canalele
+    for i in range(1, 1):
+        channel_name = f"channel_{i}"
+        print(f"\n Procesare KAN pentru: {channel_name}")
 
         try:
-            mae_day = pd.read_csv(os.path.join(baseline_day_dir, f"metrics_movingavg_{channel}.csv"))
-            mae_day_val = mae_day[mae_day["Metric"] == "MAE"]["Value"].values[0]
-        except:
-            mae_day_val = None
+            # Fisierele pentru acest canal
+            channel_csv_path = os.path.join(downsampled_dir, f"{channel_name}_downsampled_1H.csv")
 
-        try:
-            mae_week = pd.read_csv(os.path.join(baseline_week_dir, f"metrics_lastweek_{channel}.csv"))
-            mae_week_val = mae_week[mae_week["Metric"] == "MAE"]["Value"].values[0]
-        except:
-            mae_week_val = None
+            # Verificam daca fisierul exista
+            if not os.path.isfile(channel_csv_path):
+                print(f" Fisierul lipseste: {channel_csv_path}")
+                continue
 
-        rows.append({
-            "Channel": channel,
-            "MAE_MovingAvg": mae_day_val,
-            "MAE_LastWeek": mae_week_val
-        })
+            kan_model_path = os.path.join(models_dir_kan, f"kan_model_{channel_name}.pth")
+            kan_prediction_path = os.path.join(predictii_dir_kan, f"kan_predictions_{channel_name}.csv")
+            kan_metrics_path = os.path.join(metrics_dir_kan, f"kan_metrics_{channel_name}.csv")
+            plot_save_path = os.path.join(plots_dir_kan, f"plot_{channel_name}_KAN.png")
 
-    df = pd.DataFrame(rows)
-    df.to_csv(output_comparatie, index=False)
-    print(f"Tabel de comparatie baseline salvat: {output_comparatie}")
+            # Initializam si rulam modelul
+            kan_analyzer = KANAnalyzer(csv_path=channel_csv_path, channel_number = i, scaler_dir=scalers_dir_KAN,)
+            kan_analyzer.train(model_path=kan_model_path)
 
-    predictii_dir_lstm = os.path.join(base_dir, "predictii")
-    predictii_dir_lstm = os.path.join(predictii_dir_lstm, "LSTM")
+            # Predictii
+            df_results = kan_analyzer.predict()
+            df_results.to_csv(kan_prediction_path, index=False)
+            print(f" Predictii salvate: {kan_prediction_path}")
 
-    scalers_dir_LSTM = os.path.join(base_dir, "modele_salvate", "LSTM", "scalers")
+            # Metrici
+            error_analyzer = ErrorMetricsAnalyzer(
+                predictions=df_results["prediction"].values,
+                actuals=df_results["actual"].values,
+                output_path=kan_metrics_path
+            )
+            error_analyzer.save_metrics()
+            print(f" Metrici salvate: {kan_metrics_path}")
 
-    metrics_dir_lstm = os.path.join(base_dir, "metrics")
-    metrics_dir_lstm = os.path.join(metrics_dir_lstm, "LSTM")
-    plots_dir_lstm = os.path.join(plots_dir, "LSTM")
-    lstm_model_dir = os.path.join(models_dir, "LSTM")
+            # Plot
+            plt.figure(figsize=(20, 6))
+            plt.plot(df_results["timestamp"], df_results["actual"], label="Actual", linewidth=1.5)
+            plt.plot(df_results["timestamp"], df_results["prediction"], label="Predicted", linewidth=1.5)
+            plt.xlabel("Timp")
+            plt.ylabel("Consum (Power)")
+            plt.title(f"Predictii KAN vs Valori Reale - {channel_name}")
+            plt.legend()
+            plt.grid(True)
+            plt.tight_layout()
+            plt.savefig(plot_save_path)
+            plt.close()
+            print(f" Plot salvat: {plot_save_path}")
 
-    """TEST LSTM"""
-    for i in range(1, 54):
-         channel_name = f"channel_{i}"
+        except Exception as e:
+            print(f" Eroare la {channel_name}: {str(e)}")
 
-         channel_csv_path = os.path.join(downsampled_dir, f"{channel_name}_downsampled_1H.csv")
-         lstm_model_path = os.path.join(lstm_model_dir, f"lstm_model_{channel_name}.pth")
-         lstm_prediction_path = os.path.join(predictii_dir_lstm, f"lstm_predictions_{channel_name}.csv")
-         lstm_metrics_path = os.path.join(metrics_dir_lstm, f"lstm_metrics_{channel_name}.csv")
-         plot_save_path = os.path.join(plots_dir_lstm, f"plot_{channel_name}.png")
+    """FORECAST KAN"""
 
-         print(f"\n Rulare LSTM: {channel_name}")
-
-         try:
-             # Initializare obiect
-             lstm_analyzer = LSTMAnalyzer(csv_path=channel_csv_path, scaler_dir=scalers_dir_LSTM,channel_number=i)
-
-             # Antrenare model
-             lstm_analyzer.train(model_path=lstm_model_path)
-
-             # Predictii
-             df_results = lstm_analyzer.predict()
-
-             # Salvare predictii
-             df_results.to_csv(lstm_prediction_path, index=False)
-             print(f" Predictii salvate: {lstm_prediction_path}")
-
-             metrics_analyzer = ErrorMetricsAnalyzer(
-                 predictions=df_results["prediction"].values,
-                 actuals=df_results["actual"].values,
-                 output_path=lstm_metrics_path,
-             )
-             metrics_analyzer.save_metrics()
-
-             print(f" Metrici salvate: {lstm_metrics_path}")
-
-             # Salvare plot
-             plt.figure(figsize=(20, 6))
-             plt.plot(df_results["timestamp"], df_results["actual"], label="Actual", linewidth=1.5)
-             plt.plot(df_results["timestamp"], df_results["prediction"], label="Predicted", linewidth=1.5)
-             plt.xlabel("Timp")
-             plt.ylabel("Consum (Power)")
-             plt.title(f"Predictii LSTM vs Valori Reale - {channel_name}")
-             plt.legend()
-             plt.grid(True)
-             plt.tight_layout()
-             plt.savefig(plot_save_path)
-             plt.close()
-
-             print(f" Plot salvat: {plot_save_path}")
-
-         except Exception as e:
-             print(f" Eroare la {channel_name}: {str(e)}")
-
-    """FORECAST"""
     # === Config de baza ===
-    target_day = "2014-12-21"
+    target_day = "2014-11-22"
     window_size = 168
 
     # === Folder root pentru predictii ===
@@ -248,10 +245,10 @@ if __name__ == "__main__":
 
     # === Structura directoare ===
     subdirs = {
-        "combinat": os.path.join(target_folder, "combinat"),
-        "csv_LSTM": os.path.join(target_folder, "csv", "LSTM"),
-        "plots_LSTM": os.path.join(target_folder, "plots", "LSTM"),
-        "metrics_LSTM": os.path.join(target_folder, "metrics", "LSTM")
+        "combinat": os.path.join(target_folder, "KAN/combinat"),
+        "csv_KAN": os.path.join(target_folder, "csv", "KAN"),
+        "plots_KAN": os.path.join(target_folder, "plots", "KAN"),
+        "metrics_KAN": os.path.join(target_folder, "metrics", "KAN")
     }
 
     # Creaza toate folderele necesare
@@ -260,9 +257,9 @@ if __name__ == "__main__":
 
     # === Fisiere output ===
     output_csv = os.path.join(subdirs["combinat"], "forecast_total.csv")
-    output_channel_csv_LSTM = subdirs["csv_LSTM"]
-    plots_output_LSTM = subdirs["plots_LSTM"]
-    metrics_output_LSTM = subdirs["metrics_LSTM"]
+    output_channel_csv_KAN = subdirs["csv_KAN"]
+    plots_output_KAN = subdirs["plots_KAN"]
+    metrics_output_KAN = subdirs["metrics_KAN"]
 
     # === Date reale pentru canalul 1 ===
     channel_1_path = os.path.join(downsampled_dir, "channel_1_downsampled_1H.csv")
@@ -280,21 +277,20 @@ if __name__ == "__main__":
     for i in range(2, 54):
         channel_name = f"channel_{i}"
         channel_csv_path = os.path.join(downsampled_dir, f"{channel_name}_downsampled_1H.csv")
-        lstm_model_path = os.path.join(lstm_model_dir, f"lstm_model_{channel_name}.pth")
+        kan_model_path = os.path.join(models_dir_kan, f"kan_model_{channel_name}.pth")
 
         print(f" Forecast pentru {channel_name}")
 
         try:
-            forecaster = LSTMForecaster(
-                model_path=lstm_model_path,
+            forecaster = KANForecaster(
+                model_path=kan_model_path,
                 csv_path=channel_csv_path,
                 window_size=168,
-                scaler_dir=scalers_dir_LSTM,
+                scaler_dir=scalers_dir_KAN,
                 channel_number=i,
             )
 
-            forecaster.load_recent_data()
-            df_forecast = forecaster.predict_day(target_day)
+            df_forecast = forecaster.rolling_forecast_day(target_day)
 
             combined_df[f"{channel_name}_predicted"] = df_forecast["predicted_power"]
             combined_df[f"{channel_name}_actual"] = df_forecast["actual_power"]
@@ -303,7 +299,7 @@ if __name__ == "__main__":
             total_actual.append(df_forecast["actual_power"].values)
 
             # Salvare CSV
-            channel_output_csv = os.path.join(output_channel_csv_LSTM, f"forecast_{channel_name}.csv")
+            channel_output_csv = os.path.join(output_channel_csv_KAN, f"forecast_{channel_name}.csv")
             df_forecast.to_csv(channel_output_csv, index=False)
 
             # Salvare grafic individual
@@ -318,7 +314,7 @@ if __name__ == "__main__":
             plt.tight_layout()
             plt.grid(True)
 
-            plot_path = os.path.join(plots_output_LSTM, f"plot_{channel_name}.png")
+            plot_path = os.path.join(plots_output_KAN, f"plot_{channel_name}.png")
             plt.savefig(plot_path)
             plt.close()
 
@@ -326,6 +322,7 @@ if __name__ == "__main__":
 
         except Exception as e:
             print(f"️ Eroare la {channel_name}: {str(e)}")
+            traceback.print_exc()
 
     # Totaluri
     combined_df["total_predicted"] = sum(total_pred)
@@ -352,53 +349,56 @@ if __name__ == "__main__":
     plt.savefig(total_plot_path)
     plt.close()
 
-    """ KAN """
-    predictii_dir_kan = os.path.join(base_dir, "predictii")
-    predictii_dir_kan = os.path.join(predictii_dir_kan, "KAN")
 
-    metrics_dir_kan = os.path.join(base_dir, "metrics")
-    metrics_dir_kan = os.path.join(metrics_dir_kan, "KAN")
-    models_dir_kan = os.path.join(base_dir, "modele_salvate", "KAN")
-    plots_dir_kan = os.path.join(base_dir, "plots", "KAN")
-    scalers_dir_KAN = os.path.join(base_dir, "modele_salvate", "KAN", "scalers")
-    os.makedirs(scalers_dir_KAN, exist_ok=True)
-    #  Iteram prin toate canalele
-    for i in range(54, 54):
+    """ Transformer """
+    predictii_dir_transformer = os.path.join(base_dir, "predictii")
+    predictii_dir_transformer = os.path.join(predictii_dir_transformer, "Transformer")
+
+    metrics_dir_transformer = os.path.join(base_dir, "metrics")
+    metrics_dir_transformer = os.path.join(metrics_dir_transformer, "Transformer")
+    models_dir_transformer = os.path.join(base_dir, "modele_salvate", "Transformer")
+    plots_dir_transformer = os.path.join(base_dir, "plots", "Transformer")
+    scalers_dir_transformer = os.path.join(base_dir, "modele_salvate", "Transformer", "scalers")
+    os.makedirs(scalers_dir_transformer, exist_ok=True)
+
+    #  Iteram prin toate aparatele
+    for i in range(1, 1):
         channel_name = f"channel_{i}"
-        print(f"\n Procesare KAN pentru: {channel_name}")
+        print(f"\n Procesare Transformer pentru: {channel_name}")
 
         try:
-            # Fisierele pentru acest canal
             channel_csv_path = os.path.join(downsampled_dir, f"{channel_name}_downsampled_1H.csv")
 
-            # Verificam daca fisierul exista
             if not os.path.isfile(channel_csv_path):
                 print(f" Fisierul lipseste: {channel_csv_path}")
                 continue
 
-            kan_model_path = os.path.join(models_dir, f"kan_model_{channel_name}.pth")
-            kan_prediction_path = os.path.join(predictii_dir_kan, f"kan_predictions_{channel_name}.csv")
-            kan_metrics_path = os.path.join(metrics_dir_kan, f"kan_metrics_{channel_name}.csv")
-            plot_save_path = os.path.join(plots_dir_kan, f"plot_{channel_name}_KAN.png")
+            transformer_model_path = os.path.join(models_dir_transformer, f"transformer_model_{channel_name}.pth")
+            transformer_prediction_path = os.path.join(predictii_dir_transformer, f"transformer_predictions_{channel_name}.csv")
+            transformer_metrics_path = os.path.join(metrics_dir_transformer, f"transformer_metrics_{channel_name}.csv")
+            plot_save_path = os.path.join(plots_dir_transformer, f"plot_{channel_name}_Transformer.png")
 
             # Initializam si rulam modelul
-            kan_analyzer = KANAnalyzer(csv_path=channel_csv_path, channel_number = i, scaler_dir=scalers_dir_KAN,)
-            kan_analyzer.preprocess_data( )
-            kan_analyzer.train(model_path=kan_model_path)
+            transformer_analyzer = TransformerAnalyzer(
+                csv_path=channel_csv_path,
+                channel_number=i,
+                scaler_dir=scalers_dir_transformer
+            )
+            transformer_analyzer.train(model_path=transformer_model_path)
 
             # Predictii
-            df_results = kan_analyzer.predict()
-            df_results.to_csv(kan_prediction_path, index=False)
-            print(f" Predictii salvate: {kan_prediction_path}")
+            df_results = transformer_analyzer.predict()
+            df_results.to_csv(transformer_prediction_path, index=False)
+            print(f" Predictii salvate: {transformer_prediction_path}")
 
             # Metrici
             error_analyzer = ErrorMetricsAnalyzer(
                 predictions=df_results["prediction"].values,
                 actuals=df_results["actual"].values,
-                output_path=kan_metrics_path
+                output_path=transformer_metrics_path
             )
             error_analyzer.save_metrics()
-            print(f" Metrici salvate: {kan_metrics_path}")
+            print(f" Metrici salvate: {transformer_metrics_path}")
 
             # Plot
             plt.figure(figsize=(20, 6))
@@ -406,7 +406,7 @@ if __name__ == "__main__":
             plt.plot(df_results["timestamp"], df_results["prediction"], label="Predicted", linewidth=1.5)
             plt.xlabel("Timp")
             plt.ylabel("Consum (Power)")
-            plt.title(f"Predictii KAN vs Valori Reale - {channel_name}")
+            plt.title(f"Predictii Transformer vs Valori Reale - {channel_name}")
             plt.legend()
             plt.grid(True)
             plt.tight_layout()

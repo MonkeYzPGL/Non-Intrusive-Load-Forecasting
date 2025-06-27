@@ -8,13 +8,11 @@ import numpy as np
 import torch.nn as nn
 from matplotlib import pyplot as plt
 from sklearn.ensemble import RandomForestClassifier
-from statsmodels.tools.sm_exceptions import ValueWarning
-from statsmodels.tsa.stattools import acf, pacf
+from statsmodels.tsa.stattools import acf
 from torch.utils.data import DataLoader, Dataset
 from sklearn.preprocessing import MinMaxScaler
-from LSTM_Model.LSTM import LSTMModel
+from Services.AuxiliarClasses.LSTM_Model.LSTM import LSTMModel
 
-import seaborn as sns
 
 class TimeSeriesDataset(Dataset):
     def __init__(self, X, y):
@@ -89,11 +87,11 @@ class LSTMAnalyzer:
     def custom_loss(self, y_pred, y_true, alpha=3, beta=5):
         base_loss = self.criterion(y_pred, y_true)
 
-        # Detectam spike-uri (ca inainte)
+        #Detectam spike-uri
         spike_mask = (torch.abs(y_true - y_pred) > self.threshold).float()
         spike_loss = (spike_mask * torch.abs(y_true - y_pred)).mean()
 
-        # Accent special pe eroarea din prima ora (index 0)
+        #accent special pe eroarea din prima ora (index 0)
         primary_hour_error = torch.abs(y_true[:, 0] - y_pred[:, 0]).mean()
 
         # Total loss = pierdere generala + spike-uri + penalizare pe prima ora
@@ -109,7 +107,7 @@ class LSTMAnalyzer:
         return data, features
 
     def preprocess_data(self):
-        # Citirea datelor
+        #citirea datelor
         data = pd.read_csv(self.csv_path)
         data['timestamp'] = pd.to_datetime(data['timestamp'])
         data.set_index('timestamp', inplace=True)
@@ -121,13 +119,13 @@ class LSTMAnalyzer:
         data['month'] = data.index.month
         data['season'] = data['month'] % 12 // 3
 
-        # Creare caracteristici suplimentare
+        #creare caracteristici suplimentare
         data["hour_sin"] = np.sin(2 * np.pi * data["hour_of_day"] / 24)
         data["hour_cos"] = np.cos(2 * np.pi * data["hour_of_day"] / 24)
         data["day_sin"] = np.sin(2 * np.pi * data["day_of_week"] / 7)
         data["day_cos"] = np.cos(2 * np.pi * data["day_of_week"] / 7)
 
-        # Aplicare lag-uri
+        #aplicare lag-uri
         lags = [1, 2, 3, 6, 12, 24, 48,72, 168, 336, 672]
         for lag in lags:
             data[f'lag_{lag}h'] = data['power'].shift(lag)
@@ -181,7 +179,6 @@ class LSTMAnalyzer:
         data['event_on'] = ((data['is_on'] == 1) & (data['is_on'].shift(1) == 0)).astype(int)
         data['context_on_window'] = data['is_on'].rolling(window=3, center=True).max().fillna(0).astype(int)
 
-        # Împărțirea datelor înainte de scalare
         train_size = int(0.8 * len(data))
         val_size = int(0.1 * len(data))
 
@@ -202,16 +199,14 @@ class LSTMAnalyzer:
                                    'event_drop', 'is_spike_context', 'acf_1h', 'is_on', 'event_on', 'context_on_window'
                                   ]
 
-        #data, self.selected_features = self.remove_highly_correlated_features(data, self.selected_features)
-
-        # Aplicăm scalarea DOAR pe setul de train pt. a evita data leakage
+        # Aplicam scalarea DOAR pe setul de train pt. a evita data leakage
         self.scaler = MinMaxScaler(feature_range=(0, 10))
         self.scaler.fit(train_data[self.selected_features])
 
         self.scaler_y = MinMaxScaler(feature_range=(0, 10))
         self.scaler_y.fit(train_data[['power']])
 
-        # Transformăm fiecare subset folosind scaler-ul antrenat pe train
+        # Transformam fiecare subset folosind scaler-ul antrenat pe train
         train_scaled = self.scaler.transform(train_data[self.selected_features])
         val_scaled = self.scaler.transform(val_data[self.selected_features])
         test_scaled = self.scaler.transform(test_data[self.selected_features])
@@ -220,7 +215,7 @@ class LSTMAnalyzer:
         X_val, y_val = self.create_sequences(val_scaled)
         X_test, y_test = self.create_sequences(test_scaled)
 
-        # Creăm DataLoaders
+        # Cream DataLoaders
         self.train_loader = DataLoader(TimeSeriesDataset(X_train, y_train), batch_size=self.batch_size, shuffle=True)
         self.val_loader = DataLoader(TimeSeriesDataset(X_val, y_val), batch_size=self.batch_size, shuffle=False)
         self.test_loader = DataLoader(TimeSeriesDataset(X_test, y_test), batch_size=self.batch_size, shuffle=False)
@@ -374,7 +369,6 @@ class LSTMAnalyzer:
                 for i in range(len(y_pred)):
                     pred_fill = np.zeros((24, len(self.selected_features)))
                     actual_fill = np.zeros((24, len(self.selected_features)))
-
                     pred_fill[:, 0] = y_pred[i]
                     actual_fill[:, 0] = y_batch[i]
 
@@ -386,8 +380,8 @@ class LSTMAnalyzer:
 
                     row = {
                         "timestamp": timestamp,
-                        "prediction": y_pred_inv[0],  # prima ora
-                        "actual": y_actual_inv[0]  # prima ora
+                        "prediction": y_pred_inv[0],
+                        "actual": y_actual_inv[0]
                     }
 
                     rows.append(row)

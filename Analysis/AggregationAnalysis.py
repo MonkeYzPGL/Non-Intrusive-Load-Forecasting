@@ -5,20 +5,12 @@ import pandas as pd
 
 class AggregationAnalyzer:
     def __init__(self, data_dict, labels):
-        """
-        Initializeaza analiza pentru agregare si granularitate.
-        :param data_dict: Datele incarcate pentru fiecare canal.
-        :param labels: Etichetele pentru fiecare canal.
-        """
+
         self.data_dict = data_dict
         self.labels = labels
 
     def aggregate_data(self, freq):
-        """
-        Agrega datele la o anumita frecventa.
-        :param freq: Frecventa pentru agregare (e.g., 'D' pentru zi, 'W' pentru saptamana).
-        :return: Datele agregate pentru fiecare canal.
-        """
+
         aggregated_data = {}
         for channel, data in self.data_dict.items():
             if data is not None:
@@ -33,11 +25,7 @@ class AggregationAnalyzer:
         return downsampled_data
 
     def save_aggregated_data(self, freq, output_dir):
-        """
-        Salveaza datele agregate intr-un director.
-        :param freq: Frecventa pentru agregare.
-        :param output_dir: Directorul unde sa se salveze datele.
-        """
+
         aggregated_data = self.aggregate_data(freq)
         for channel, data in aggregated_data.items():
             output_path = os.path.join(output_dir, f"{channel.replace('.dat', '')}_aggregated_{freq}.csv")
@@ -45,12 +33,7 @@ class AggregationAnalyzer:
             print(f"Aggregated data saved to {output_path}")
 
     def save_downsampled_data(self, freq, output_dir):
-        """
-        Salveaza datele cu granularitate redusa intr-un director.
-        Inlocuieste valorile lipsa (NaN) cu 0 inainte de salvare.
-        :param freq: Frecventa dorita pentru reducerea granularitatii.
-        :param output_dir: Directorul unde sa se salveze datele.
-        """
+
         downsampled_data = self.downsample_data(freq)
         for channel, data in downsampled_data.items():
             data.fillna(0, inplace=True)
@@ -59,11 +42,7 @@ class AggregationAnalyzer:
             print(f"Downsampled data saved to {output_path}")
 
     def generate_aggregated(self, input_folder):
-        """
-        Creeaza un fisier channel_1_downsampled_1H.csv rezultat prin suma tuturor aparatelor
-        ignorand channel1
-        :input_folder: Directorul unde sa se salveze csv-ul si sa fie preluat csv-urile aparatelor
-        """
+
         channel_dfs = []
 
         for filename in sorted(os.listdir(input_folder)):
@@ -87,3 +66,28 @@ class AggregationAnalyzer:
         print(f"Fisierul channel 1 nou salvat la: {output_path}")
 
         return output_path
+
+    def calculate_delta(directory):
+        files = [f for f in os.listdir(directory) if f.endswith("1H.csv")]
+
+        # Citirea datelor
+        data = {}
+        for file in files:
+            channel_name = file.replace("_downsampled_1H.csv", "")
+            filepath = os.path.join(directory, file)
+            df = pd.read_csv(filepath, parse_dates=['timestamp'], index_col='timestamp')
+            data[channel_name] = df
+
+        # Verificare daca avem channel_1
+        if "channel_1" not in data:
+            raise ValueError("Lipseste fisierul pentru channel_1.")
+
+        # Calculul diferentei delta
+        other_channels = [ch for ch in data if ch != "channel_1"]
+        data["delta"] = data["channel_1"] - sum(data[ch] for ch in other_channels)
+
+        # Salvare rezultat intr-un fisier CSV
+        output_file = os.path.join(directory, "delta_values_1T.csv")
+        data["delta"].to_csv(output_file)
+
+        print(f"Fisierul cu valorile delta a fost salvat: {output_file}")

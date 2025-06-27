@@ -1,15 +1,6 @@
-'''
-Analiza datelor (Data Analysis)
-Citirea datelor din fisiere pentru casa 3 din fisierele .dat.
-Vizualizarea datelor sub forma de grafice pentru fiecare din canale.
-Analizarea distributiei pentru fiecare aparat.
-'''
-
 import os
 import pandas as pd
 import matplotlib.pyplot as plt
-from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
-from tabulate import tabulate
 import re
 
 class DataAnalyzer:
@@ -22,7 +13,6 @@ class DataAnalyzer:
         self.metrics_df = None
 
     def load_labels(self):
-        """Incarcare labels din fisier."""
         try:
             with open(self.labels_file, 'r') as f:
                 channels_dict = {}
@@ -30,13 +20,11 @@ class DataAnalyzer:
                 for line in f:
                     if line.strip():
                         channel, label = line.strip().split(' ', 1)
-                        channel_num = int(re.search(r'\d+', channel).group())  # Extrage numărul canalului
-                        channels_dict[channel_num] = (channel, label)  # Stochează în dicționar
+                        channel_num = int(re.search(r'\d+', channel).group())
+                        channels_dict[channel_num] = (channel, label)
 
-                #  Sortează canalele numeric
                 sorted_labels = dict(sorted(channels_dict.items()))
 
-                #  Reconvertim dicționarul în formatul inițial
                 for channel_num, (channel, label) in sorted_labels.items():
                     self.labels[f"channel_{channel}.dat"] = label
 
@@ -45,7 +33,6 @@ class DataAnalyzer:
             print(f"Error loading labels: {e}")
 
     def load_channel_data(self, file_path):
-        """Incarcare timeseries din fisier."""
         try:
             data = pd.read_csv(file_path, delimiter=' ', names=['timestamp', 'power'], header=None)
             data['timestamp'] = pd.to_datetime(data['timestamp'], unit='s')
@@ -56,7 +43,6 @@ class DataAnalyzer:
             return None
 
     def load_data(self):
-        """Incarcare data din fisier pentru fiecare canal."""
         self.channels.sort(key=lambda x: int(re.search(r'\d+', x).group()) if re.search(r'\d+', x) else float('inf'))
 
 
@@ -69,7 +55,6 @@ class DataAnalyzer:
                 print(f"File not found: {file_path}")
 
     def plot_time_series(self):
-        """Plot time series pentru fiecare canal."""
         for channel, data in self.data_dict.items():
             if data is not None:
                 plt.figure(figsize=(12, 6))

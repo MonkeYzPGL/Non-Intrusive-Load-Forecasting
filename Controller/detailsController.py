@@ -1,15 +1,10 @@
-from flask import Flask, send_file, jsonify
+from flask import Blueprint, send_file, jsonify
 import os
 
-from flask_cors import CORS
-
-from Analysis.ACF import generate_acf_plot
-from Analysis.PlotAnalysis import generate_histogram
-from Metrics.Metrics import metrics_channels, get_consumption_for_day
+from Services.DetailsService import generate_histogram, generate_acf_plot, metrics_channels, get_consumption_for_day
 import pandas as pd
 
-app = Flask(__name__)
-CORS(app)
+details_bp = Blueprint("details", __name__)
 
 # Setari directoare
 BASE_DIR = r'C:\Users\elecf\Desktop\Licenta\Date\UK-DALE-disaggregated\house_1'
@@ -18,31 +13,26 @@ DETAILS_DIR = os.path.join(BASE_DIR, 'details')
 HISTOGRAM_DIR = os.path.join(BASE_DIR, "analysis", "histogram")
 LABELS_FILE = os.path.join(BASE_DIR, "labels.dat")
 
-@app.route("/get_details/<int:channel_id>", methods=["GET"])
+@details_bp.route("/get_details/<int:channel_id>", methods=["GET"])
 def get_channel_details(channel_id):
     channel_name = f"channel_{channel_id}"
     details_file = os.path.join(DETAILS_DIR, f"{channel_name}_details.csv")
 
-    # Daca fisierul exista, il returnam
     if os.path.exists(details_file):
         return send_file(details_file, mimetype="text/csv")
 
-    # Daca NU exista, cautam fisierul CSV de baza
     data_file = os.path.join(DOWNSAMPLED_DIR, f"{channel_name}_downsampled_1H.csv")
     if not os.path.exists(data_file):
         return jsonify({"error": f"Fisierul de date pentru {channel_name} nu exista."}), 404
 
     try:
-        # Cream temporar un folder cu doar acel fisier ca sa rulam functia ta
         temp_input_dir = os.path.join(BASE_DIR, 'temp_input')
         os.makedirs(temp_input_dir, exist_ok=True)
         temp_copy = os.path.join(temp_input_dir, os.path.basename(data_file))
         pd.read_csv(data_file).to_csv(temp_copy, index=False)
 
-        # Rulam functia pe folderul temporar
         metrics_channels(temp_input_dir, DETAILS_DIR)
 
-        # Stergem copia
         os.remove(temp_copy)
 
         if os.path.exists(details_file):
@@ -53,16 +43,14 @@ def get_channel_details(channel_id):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.route("/histogram/<int:channel_id>", methods=["GET"])
+@details_bp.route("/histogram/<int:channel_id>", methods=["GET"])
 def get_histogram(channel_id):
     channel_name = f"channel_{channel_id}"
     histogram_path = os.path.join(HISTOGRAM_DIR, f"{channel_name}_histogram.png")
 
-    #Daca deja exista
     if os.path.exists(histogram_path):
         return send_file(histogram_path, mimetype="image/png")
 
-    #Daca nu exista, o generam
     try:
         generated_path = generate_histogram(
             channel_id=channel_id,
@@ -77,7 +65,7 @@ def get_histogram(channel_id):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.route("/consumption/<int:channel_id>/<date_str>", methods=["GET"])
+@details_bp.route("/consumption/<int:channel_id>/<date_str>", methods=["GET"])
 def get_day_consumption(channel_id, date_str):
     try:
         result = get_consumption_for_day(
@@ -94,7 +82,7 @@ def get_day_consumption(channel_id, date_str):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.route("/csv/<int:channel_id>", methods=["GET"])
+@details_bp.route("/csv/<int:channel_id>", methods=["GET"])
 def get_csv_for_channel(channel_id):
     channel_name = f"channel_{channel_id}"
     csv_path = os.path.join(DOWNSAMPLED_DIR, f"{channel_name}_downsampled_1H.csv")
@@ -105,7 +93,7 @@ def get_csv_for_channel(channel_id):
     return send_file(csv_path, mimetype='text/csv')
 
 
-@app.route("/acf/<int:channel_id>", methods=["GET"])
+@details_bp.route("/acf/<int:channel_id>", methods=["GET"])
 def get_acf_plot(channel_id):
     try:
         csv_dir = os.path.join(BASE_DIR, "downsampled", "1H")
@@ -125,5 +113,38 @@ def get_acf_plot(channel_id):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-if __name__ == "__main__":
-    app.run(debug=True)
+@details_bp.route("/labels", methods=["GET"])
+def get_labels_json():
+    if not os.path.exists(LABELS_FILE):
+        return jsonify({"error": "Fisierul labels.dat nu exista."}), 404
+
+    labels = {}
+    with open(LABELS_FILE, 'r') as f:
+        for line in f:
+            parts = line.strip().split(maxsplit=1)
+            if len(parts) == 2:
+                channel_id, name = parts
+                labels[int(channel_id)] = name
+
+    return jsonify(labels)
+
+@details_bp.route("/downsampled_json/<int:channel_id>", methods=["GET"])
+def get_downsampled_json(channel_id):
+    channel_name = f"channel_{channel_id}"
+    csv_path = os.path.join(DOWNSAMPLED_DIR, f"{channel_name}_downsampled_1H.csv")
+
+    if not os.path.exists(csv_path):
+        return jsonify({"error": f"CSV-ul pentru {channel_name} nu exista."}), 404
+
+    try:
+        df = pd.read_csv(csv_path, parse_dates=['timestamp'])
+
+        #extragem ultimele 10% date
+        count_10_percent = max(1, int(len(df) * 0.1))
+        recent_rows = df.tail(count_10_percent)
+
+        return jsonify(recent_rows.to_dict(orient="records"))
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
