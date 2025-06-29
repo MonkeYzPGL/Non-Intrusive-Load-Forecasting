@@ -167,10 +167,10 @@ def metrics_channels(input_dir, output_dir):
                 output_file = os.path.join(output_dir, f"{channel_name}_details.csv")
                 pd.DataFrame([stats]).to_csv(output_file, index=False)
 
-                print(f"✅ Detalii salvate: {output_file}")
+                print(f"Detalii salvate: {output_file}")
 
             except Exception as e:
-                print(f" Eroare la {file}: {str(e)}")
+                print(f"Eroare la {file}: {str(e)}")
 
 def get_consumption_for_day(channel_id, csv_dir, date_str, labels_file):
     import pandas as pd

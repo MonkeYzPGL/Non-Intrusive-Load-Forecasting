@@ -1,7 +1,7 @@
 from flask import Blueprint, send_file, jsonify
 import os
 
-from Services.DetailsService import generate_histogram, generate_acf_plot, metrics_channels, get_consumption_for_day
+from services.DetailsService import generate_histogram, generate_acf_plot, metrics_channels, get_consumption_for_day
 import pandas as pd
 
 details_bp = Blueprint("details", __name__)
@@ -148,3 +148,13 @@ def get_downsampled_json(channel_id):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@details_bp.route("/plot/<int:channel_id>", methods=["GET"])
+def get_plot_for_channel(channel_id):
+    channel_name = f"channel_{channel_id}"
+    plot_dir = os.path.join(BASE_DIR, "analysis", "plots")
+    plot_path = os.path.join(plot_dir, f"{channel_name}_downsampled_1H.png")
+
+    if os.path.exists(plot_path):
+        return send_file(plot_path, mimetype="image/png")
+    else:
+        return jsonify({"error": f"Plot-ul pentru {channel_name} nu a fost gasit in {plot_dir}"}), 404

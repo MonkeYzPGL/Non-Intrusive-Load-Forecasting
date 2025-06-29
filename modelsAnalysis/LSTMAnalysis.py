@@ -11,8 +11,8 @@ from sklearn.ensemble import RandomForestClassifier
 from statsmodels.tsa.stattools import acf
 from torch.utils.data import DataLoader, Dataset
 from sklearn.preprocessing import MinMaxScaler
-from Services.AuxiliarClasses.LSTM_Model.LSTM import LSTMModel
-
+from services.auxiliarClasses.LSTM_Model.LSTM import LSTMModel
+import seaborn as sns
 
 class TimeSeriesDataset(Dataset):
     def __init__(self, X, y):
@@ -68,7 +68,6 @@ class LSTMAnalyzer:
         self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.learning_rate, weight_decay=1e-5)
         self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, mode='min', factor=0.9, patience=3, min_lr=0.00005)
 
-
     def calculate_spike_threshold(self,df, method="std", k=3, percentile=95):
         if "power" not in df.columns:
             raise ValueError("DataFrame-ul trebuie sa aiba o coloana 'power'.")
@@ -80,7 +79,7 @@ class LSTMAnalyzer:
         elif method == "percentile":
             threshold = np.percentile(df['power'], percentile)
         else:
-            raise ValueError("Metoda trebuie sa fie 'std' sau 'percentile'.")
+            raise ValueError("Alege 'std' sau 'percentile'.")
 
         return threshold
 
@@ -101,7 +100,7 @@ class LSTMAnalyzer:
         corr_matrix = data[features].corr().abs()
         upper = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
         to_drop = [column for column in upper.columns if any(upper[column] > threshold)]
-        print(f"[INFO] Caracteristici eliminate din cauza corelatiei > {threshold}: {to_drop}")
+        print(f" Caracteristici eliminate cu corelatie > {threshold}: {to_drop}")
         data = data.drop(columns=to_drop)
         features = [f for f in features if f not in to_drop]
         return data, features
@@ -119,7 +118,6 @@ class LSTMAnalyzer:
         data['month'] = data.index.month
         data['season'] = data['month'] % 12 // 3
 
-        #creare caracteristici suplimentare
         data["hour_sin"] = np.sin(2 * np.pi * data["hour_of_day"] / 24)
         data["hour_cos"] = np.cos(2 * np.pi * data["hour_of_day"] / 24)
         data["day_sin"] = np.sin(2 * np.pi * data["day_of_week"] / 7)
@@ -235,15 +233,13 @@ class LSTMAnalyzer:
             joblib.dump(self.scaler_y, self.scaler_path_y)
             print(f" Scalere salvate pentru channel_{self.channel_number}: {self.scaler_path_X}, {self.scaler_path_y}")
 
+        #matricea de corelaie
+        corr_matrix = data[self.selected_features].corr()
 
-        # # Compute the correlation matrix
-        # corr_matrix = data[self.selected_features].corr()
-        #
-        # # Plot the correlation matrix as a heatmap
-        # plt.figure(figsize=(12, 10))
-        # sns.heatmap(corr_matrix, annot=False, cmap='coolwarm', fmt=".2f")
-        # plt.title("Correlation Matrix of Engineered Features")
-        # plt.show()
+        plt.figure(figsize=(12, 10))
+        sns.heatmap(corr_matrix, annot=False, cmap='coolwarm', fmt=".2f")
+        plt.title("Correlation Matrix of Engineered Features")
+        plt.show()
 
     def create_sequences(self, data, horizon=24):
         X, y = [], []

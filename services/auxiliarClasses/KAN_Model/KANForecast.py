@@ -6,7 +6,7 @@ import pandas as pd
 import torch
 from statsmodels.tsa.stattools import acf
 
-from Services.AuxiliarClasses.KAN_Model.KAN import KAN
+from services.auxiliarClasses.KAN_Model.KAN import KAN
 
 
 class KANForecaster:

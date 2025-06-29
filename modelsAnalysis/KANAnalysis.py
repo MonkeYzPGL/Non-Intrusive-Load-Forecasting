@@ -10,7 +10,7 @@ from torch import nn
 from sklearn.preprocessing import MinMaxScaler
 from torch.utils.data import Dataset, DataLoader
 from sklearn.ensemble import RandomForestClassifier
-from Services.AuxiliarClasses.KAN_Model.KAN import KAN
+from services.auxiliarClasses.KAN_Model.KAN import KAN
 from statsmodels.tsa.stattools import acf
 
 

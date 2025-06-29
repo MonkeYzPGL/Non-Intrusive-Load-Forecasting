@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 import os
 from statsmodels.tsa.stattools import acf
-from Services.AuxiliarClasses.LSTM_Model.LSTM import LSTMModel
+from services.auxiliarClasses.LSTM_Model.LSTM import LSTMModel
 
 class LSTMForecaster:
     def __init__(self, model_path, csv_path, window_size=168, hidden_size=512, scaler_dir=None, channel_number=0):

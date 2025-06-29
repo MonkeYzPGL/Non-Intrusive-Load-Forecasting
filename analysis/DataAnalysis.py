@@ -44,8 +44,6 @@ class DataAnalyzer:
 
     def load_data(self):
         self.channels.sort(key=lambda x: int(re.search(r'\d+', x).group()) if re.search(r'\d+', x) else float('inf'))
-
-
         for channel in self.channels:
             file_path = os.path.join(self.house_dir, channel)
             if os.path.exists(file_path):
@@ -64,3 +62,48 @@ class DataAnalyzer:
                 plt.title(f"Time Series of {self.labels.get(channel, 'Unknown')}")
                 plt.legend()
                 plt.show()
+
+    def plot_downsampled_csvs(self, csv_dir):
+        output_dir = os.path.join(self.house_dir, "analysis", "plots")
+        os.makedirs(output_dir, exist_ok=True)
+
+        simple_labels = {}
+        with open(self.labels_file, 'r') as f:
+            for line in f:
+                parts = line.strip().split()
+                if len(parts) >= 2:
+                    channel_id = int(parts[0])
+                    label = ' '.join(parts[1:])
+                    simple_labels[channel_id] = label
+
+        for file in os.listdir(csv_dir):
+            if file.endswith("_downsampled_1H.csv"):
+                match = re.search(r'channel_(\d+)', file)
+                if not match:
+                    continue
+                channel_id = int(match.group(1))
+                label = simple_labels.get(channel_id, f"Channel {channel_id}")
+
+                try:
+                    file_path = os.path.join(csv_dir, file)
+                    df = pd.read_csv(file_path, parse_dates=['timestamp'])
+
+                    if 'power' not in df.columns:
+                        print(f"campul power lipseste din {file}")
+                        continue
+
+                    plt.figure(figsize=(12, 5))
+                    plt.plot(df['timestamp'], df['power'], label=label)
+                    plt.xlabel("Timp")
+                    plt.ylabel("Consum (W)")
+                    plt.title(f"{label} - Consum energetic (1H)")
+                    plt.grid(True)
+                    plt.tight_layout()
+
+                    save_path = os.path.join(output_dir, f"{file.replace('.csv', '.png')}")
+                    plt.savefig(save_path)
+                    plt.close()
+                    print(f"Plot salvat: {save_path}")
+                except Exception as e:
+                    print(f"Eroare la {file}: {e}")
+
