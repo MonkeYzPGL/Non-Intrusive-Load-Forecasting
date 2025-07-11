@@ -98,7 +98,6 @@ def get_prediction_for_day_kan(channel_id, date_str):
 @forecast_bp.route("/metricsKAN/<int:channel_id>/<date_str>", methods=["GET"])
 def get_forecast_metrics_kan(channel_id, date_str):
     try:
-        BASE_DIR = r"C:\Users\elecf\Desktop\Licenta\Date\UK-DALE-disaggregated\house_1"
         metrics = calculate_forecast_metrics_kan(channel_id, date_str, BASE_DIR)
         return jsonify(metrics)
     except FileNotFoundError as e:

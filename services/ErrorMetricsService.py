@@ -21,12 +21,12 @@ class ErrorMetricsAnalyzer:
         return r2_score(self.actuals, self.predictions)
 
     def mape(self):
-        mask = self.actuals != 0  # Evită impartirea la 0
+        mask = self.actuals != 0  #evita impartirea la 0
         return np.mean(np.abs((self.actuals[mask] - self.predictions[mask]) / self.actuals[mask])) * 100
 
     def smape(self):
         denominator = (np.abs(self.actuals) + np.abs(self.predictions)) / 2
-        mask = denominator != 0  # Evită impartirea la 0
+        mask = denominator != 0  #evita impartirea la 0
         return np.mean(np.abs(self.actuals[mask] - self.predictions[mask]) / denominator[mask]) * 100
 
     def compute_all_metrics(self):

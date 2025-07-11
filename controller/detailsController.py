@@ -1,12 +1,10 @@
 from flask import Blueprint, send_file, jsonify
 import os
-
 from services.DetailsService import generate_histogram, generate_acf_plot, metrics_channels, get_consumption_for_day
 import pandas as pd
 
 details_bp = Blueprint("details", __name__)
 
-# Setari directoare
 BASE_DIR = r'C:\Users\elecf\Desktop\Licenta\Date\UK-DALE-disaggregated\house_1'
 DOWNSAMPLED_DIR = os.path.join(BASE_DIR, 'downsampled', '1H')
 DETAILS_DIR = os.path.join(BASE_DIR, 'details')
@@ -91,7 +89,6 @@ def get_csv_for_channel(channel_id):
         return jsonify({"error": f"Fisierul CSV pentru {channel_name} nu exista."}), 404
 
     return send_file(csv_path, mimetype='text/csv')
-
 
 @details_bp.route("/acf/<int:channel_id>", methods=["GET"])
 def get_acf_plot(channel_id):

@@ -1,13 +1,10 @@
 import os
-
 import joblib
 import numpy as np
 import pandas as pd
 import torch
 from statsmodels.tsa.stattools import acf
-
 from services.auxiliarClasses.KAN_Model.KAN import KAN
-
 
 class KANForecaster:
     def __init__(self, model_path, csv_path, window_size=168, hidden_size=512, scaler_dir=None, channel_number=0):

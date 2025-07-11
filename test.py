@@ -1,5 +1,4 @@
 import os
-
 from analysis.DataAnalysis import DataAnalyzer
 
 house_dir = r'C:\Users\elecf\Desktop\Licenta\Date\UK-DALE-disaggregated\house_1'

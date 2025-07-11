@@ -88,10 +88,6 @@ class DataAnalyzer:
                     file_path = os.path.join(csv_dir, file)
                     df = pd.read_csv(file_path, parse_dates=['timestamp'])
 
-                    if 'power' not in df.columns:
-                        print(f"campul power lipseste din {file}")
-                        continue
-
                     plt.figure(figsize=(12, 5))
                     plt.plot(df['timestamp'], df['power'], label=label)
                     plt.xlabel("Timp")
@@ -103,7 +99,7 @@ class DataAnalyzer:
                     save_path = os.path.join(output_dir, f"{file.replace('.csv', '.png')}")
                     plt.savefig(save_path)
                     plt.close()
-                    print(f"Plot salvat: {save_path}")
+                    print(f"plot salvat: {save_path}")
                 except Exception as e:
-                    print(f"Eroare la {file}: {e}")
+                    print(f"eroare la {file}: {e}")
 

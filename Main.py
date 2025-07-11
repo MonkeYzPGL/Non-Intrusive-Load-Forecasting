@@ -16,18 +16,17 @@ from services.BaselineService import BaselineGenerator
 from Transformer_Model.TransformerAnalysis import TransformerAnalyzer
 
 if __name__ == "__main__":
-    # Setam directorul de baza
     base_dir = r'C:\Users\elecf\Desktop\Licenta\Date\UK-DALE-disaggregated\house_1'
     # labels_file = os.path.join(base_dir, 'labels.dat')
     #
-    # #  Detectam automat canalele din fisierele .dat
+    # # detectam automat canalele din fisierele .dat
     # valid_channels = []
     # for f in os.listdir(base_dir):
     #     if f.endswith(".dat") and "labels" not in f.lower():
     #         valid_channels.append(f)
     # channels = valid_channels
 
-    #  Cream sub-directoarele pentru organizarea fisierelor
+    #cream sub-directoarele pentru organizarea fisierelor
     downsampled_dir = os.path.join(base_dir, "downsampled")
     metrics_dir = os.path.join(base_dir, "metrics")
     predictii_dir = os.path.join(base_dir, "predictii")
@@ -44,7 +43,7 @@ if __name__ == "__main__":
     os.makedirs(predictii_viitor_dir, exist_ok=True)
     os.makedirs(baseline_dir, exist_ok=True)
 
-    # Inițializam si preprocesam datele
+    #initializam si preprocesare date
     # analyzer = DataAnalyzer(house_dir=base_dir, labels_file=labels_file, channels=channels)
     # analyzer.load_labels()
     # analyzer.load_data()
@@ -52,10 +51,10 @@ if __name__ == "__main__":
     # for channel in channels:
     # analyzer.plot_acf_pacf(r'C:\Users\elecf\Desktop\Licenta\Date\UK-DALE-disaggregated\house_1\downsampled\1H\channel_1_downsampled_1H.csv')
 
-    # Vizualizam datele pentru fiecare canal
+    #vizualizam datele pentru fiecare channel
     # analyzer.plot_time_series()
 
-    # Calculam si salvam metricile generale
+    #calculam si salvam metricile generale
     # metrics_analyzer = MetricsAnalyzer(data_dict=analyzer.data_dict, labels=analyzer.labels)
     # general_metrics_path = os.path.join(metrics_dir, "general_metrics.csv")
     #
@@ -70,20 +69,20 @@ if __name__ == "__main__":
     # }
     # metrics_analyzer.save_metrics(output_path=general_metrics_path)
 
-    # Initializam PlotAnalyzer pentru vizualizari suplimentare
+
     # plot_analyzer = PlotAnalyzer(data_dict=analyzer.data_dict, labels=analyzer.labels)
 
     # plot_analzyzer.plot_histograms()  # Histogramele pentru distributia consumului
     # plot_analyzer.plot_correlograms()  # Corelograme pentru analiza corelatiilor
 
-    #  Salvam datele agregate și reducem granularitatea
+    # salvam datele agregate și reducem granularitatea
     #aggregation_analyzer = AggregationAnalyzer(data_dict=analyzer.data_dict, labels=analyzer.labels)
     downsampled_dir = os.path.join(downsampled_dir, "1H")
     #aggregation_analyzer.save_downsampled_data(freq='1H', output_dir=downsampled_dir)
     #aggregation_analyzer.generate_aggregated(downsampled_dir)
 
 
-    # DECOMPOSITION
+    #DECOMPOSITION
     decomposition_dir = os.path.join(base_dir, "decomposition")
     os.makedirs(decomposition_dir, exist_ok=True)
 
@@ -107,27 +106,27 @@ if __name__ == "__main__":
     os.makedirs(baseline_week_dir, exist_ok=True)
     os.makedirs(baseline_seasonal_dir, exist_ok=True)
 
-    # BASELINE: Moving Average (24h), Last Week (168h), Seasonal Hour (5d)
+    # BASELINE
     for i in range(1,1):
         channel_name = f"channel_{i}"
         input_csv = os.path.join(downsampled_dir, f"{channel_name}_downsampled_1H.csv")
 
         try:
-            # MOVING AVERAGE
+            #MOVING AVERAGE
             output_csv_ma = os.path.join(baseline_day_dir, f"baseline_movingavg_{channel_name}.csv")
             metrics_csv_ma = os.path.join(baseline_day_dir, f"metrics_movingavg_{channel_name}.csv")
             BaselineGenerator.moving_average(input_csv, output_csv_ma)
             df_ma = pd.read_csv(output_csv_ma)
             ErrorMetricsAnalyzer(df_ma['prediction'], df_ma['actual'], metrics_csv_ma).save_metrics()
 
-            # LAST WEEK
+            #LAST WEEK
             output_csv_lw = os.path.join(baseline_week_dir, f"baseline_lastweek_{channel_name}.csv")
             metrics_csv_lw = os.path.join(baseline_week_dir, f"metrics_lastweek_{channel_name}.csv")
             BaselineGenerator.last_week(input_csv, output_csv_lw)
             df_lw = pd.read_csv(output_csv_lw)
             ErrorMetricsAnalyzer(df_lw['prediction'], df_lw['actual'], metrics_csv_lw).save_metrics()
 
-            # SEASONAL HOURLY
+            #SEASONAL HOURLY
             output_csv_s = os.path.join(baseline_seasonal_dir, f"baseline_seasonal_{channel_name}.csv")
             metrics_csv_s = os.path.join(baseline_seasonal_dir, f"metrics_seasonal_{channel_name}.csv")
             BaselineGenerator.seasonal_hourly(input_csv, output_csv_s)
@@ -181,7 +180,6 @@ if __name__ == "__main__":
     scalers_dir_transformer = os.path.join(base_dir, "modele_salvate", "Transformer", "scalers")
     os.makedirs(scalers_dir_transformer, exist_ok=True)
 
-    #  Iteram prin toate aparatele
     for i in range(1, 1):
         channel_name = f"channel_{i}"
         print(f"\n Procesare Transformer pentru: {channel_name}")
@@ -198,7 +196,7 @@ if __name__ == "__main__":
             transformer_metrics_path = os.path.join(metrics_dir_transformer, f"transformer_metrics_{channel_name}.csv")
             plot_save_path = os.path.join(plots_dir_transformer, f"plot_{channel_name}_Transformer.png")
 
-            # Initializam si rulam modelul
+            #initializam si rulam modelul
             transformer_analyzer = TransformerAnalyzer(
                 csv_path=channel_csv_path,
                 channel_number=i,
@@ -206,12 +204,12 @@ if __name__ == "__main__":
             )
             transformer_analyzer.train(model_path=transformer_model_path)
 
-            # Predictii
+            #predictii
             df_results = transformer_analyzer.predict()
             df_results.to_csv(transformer_prediction_path, index=False)
             print(f" Predictii salvate: {transformer_prediction_path}")
 
-            # Metrici
+            #metrici
             error_analyzer = ErrorMetricsAnalyzer(
                 predictions=df_results["prediction"].values,
                 actuals=df_results["actual"].values,
@@ -220,7 +218,6 @@ if __name__ == "__main__":
             error_analyzer.save_metrics()
             print(f" Metrici salvate: {transformer_metrics_path}")
 
-            # Plot
             plt.figure(figsize=(20, 6))
             plt.plot(df_results["timestamp"], df_results["actual"], label="Actual", linewidth=1.5)
             plt.plot(df_results["timestamp"], df_results["prediction"], label="Predicted", linewidth=1.5)

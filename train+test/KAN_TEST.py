@@ -11,7 +11,7 @@ from services.ErrorMetricsService import ErrorMetricsAnalyzer
 
 if __name__ == "__main__":
     base_dir = r'C:\Users\elecf\Desktop\Licenta\Date\UK-DALE-disaggregated\house_1'
-    downsampled_dir = os.path.join(base_dir, "downsampled")
+    downsampled_dir = os.path.join(base_dir, "downsampled/1H")
     metrics_dir = os.path.join(base_dir, "metrics")
     predictii_dir = os.path.join(base_dir, "predictii")
     models_dir = os.path.join(base_dir, "modele_salvate")
@@ -28,7 +28,7 @@ if __name__ == "__main__":
     plots_dir_kan = os.path.join(base_dir, "plots", "KAN")
     scalers_dir_KAN = os.path.join(base_dir, "modele_salvate", "KAN", "scalers")
     os.makedirs(scalers_dir_KAN, exist_ok=True)
-    #  Iteram prin toate canalele
+
     for i in range(1, 1):
         channel_name = f"channel_{i}"
         print(f"\n Procesare KAN pentru: {channel_name}")
@@ -82,7 +82,7 @@ if __name__ == "__main__":
     """FORECAST KAN"""
 
     # === Config de baza ===
-    target_day = "2014-12-21"
+    target_day = "2014-12-4"
     window_size = 168
 
     base_output_path = r"C:\Users\elecf\Desktop\Licenta\Date\UK-DALE-disaggregated\house_1\predictii_viitor"
@@ -95,11 +95,11 @@ if __name__ == "__main__":
         "metrics_KAN": os.path.join(target_folder, "metrics", "KAN")
     }
 
-    # Creaza toate folderele necesare
+    #creaza toate folderele necesare
     for path in subdirs.values():
         os.makedirs(path, exist_ok=True)
 
-    # Fisiere output
+    #sisiere output
     kan_combinat_dir = os.path.join(subdirs["combinat"], "KAN")
     os.makedirs(kan_combinat_dir, exist_ok=True)
     output_csv = os.path.join(kan_combinat_dir, "forecast_total_kan.csv")
@@ -107,7 +107,7 @@ if __name__ == "__main__":
     plots_output_KAN = subdirs["plots_KAN"]
     metrics_output_KAN = subdirs["metrics_KAN"]
 
-    # Date reale pentru canalul 1
+    #date reale pentru canalul 1
     channel_1_path = os.path.join(downsampled_dir, "channel_1_downsampled_1H.csv")
     channel_1_df = pd.read_csv(channel_1_path)
     channel_1_df['timestamp'] = pd.to_datetime(channel_1_df['timestamp'])
@@ -115,7 +115,7 @@ if __name__ == "__main__":
     actual_total = channel_1_df.loc[target_day]['power'].reset_index(drop=True)
     timestamps = channel_1_df.loc[target_day].index
 
-    # Predictii combinate
+    #predictii combinate
     combined_df = pd.DataFrame({'timestamp': timestamps})
     total_pred = []
     total_actual = []
@@ -157,7 +157,7 @@ if __name__ == "__main__":
             analyzer.save_metrics()
             print(f" Metrici salvate pentru {channel_name}: {metrics_path_channel}")
 
-            # Salvare grafic individual
+            #salvare grafic individual
             plt.figure(figsize=(10, 4))
             plt.plot(df_forecast["timestamp"], df_forecast["actual_power"], label="Actual", color="red")
             plt.plot(df_forecast["timestamp"], df_forecast["predicted_power"], label="Predicted", color="blue")
@@ -195,7 +195,7 @@ if __name__ == "__main__":
     analyzer_total.save_metrics()
     print(f" Metrici totale KAN salvate: {metrics_total_path}")
 
-    # Grafic total
+    #frafic total
     plt.figure(figsize=(12, 5))
     plt.plot(combined_df["timestamp"], combined_df["total_actual"], label="Total Actual", color="red")
     plt.plot(combined_df["timestamp"], combined_df["total_predicted"], label="Total Predicted", color="blue")

@@ -1,6 +1,5 @@
 import os
 import time
-
 import joblib
 import numpy as np
 import pandas as pd
@@ -12,7 +11,6 @@ from torch.utils.data import Dataset, DataLoader
 from sklearn.ensemble import RandomForestClassifier
 from services.auxiliarClasses.KAN_Model.KAN import KAN
 from statsmodels.tsa.stattools import acf
-
 
 class TimeSeriesDataset(Dataset):
     def __init__(self, X, y):
@@ -60,7 +58,7 @@ class KANAnalyzer:
         self.selected_features = []
         self.preprocess_data()
 
-        self.model = None  # va fi initializat in train()
+        self.model = None  #va fi initializat in train()
         self.criterion = nn.SmoothL1Loss()
 
         #aici NU initializam optimizer, pentru ca modelul nu e definit inca
@@ -68,7 +66,7 @@ class KANAnalyzer:
 
     def calculate_spike_threshold(self, df, method="std", k=3, percentile=95):
         if "power" not in df.columns:
-            raise ValueError("DataFrame-ul trebuie sa aiba o coloana 'power'.")
+            raise ValueError("DataFrame-ul trebuie sa aiba o coloana 'power'")
 
         if method == "std":
             mean_power = df['power'].mean()
@@ -77,21 +75,21 @@ class KANAnalyzer:
         elif method == "percentile":
             threshold = np.percentile(df['power'], percentile)
         else:
-            raise ValueError("Metoda trebuie sa fie 'std' sau 'percentile'.")
+            raise ValueError("Metoda trebuie sa fie 'std' sau 'percentile'")
 
         return threshold
 
     def custom_loss(self, y_pred, y_true, alpha=3, beta=5):
         base_loss = self.criterion(y_pred, y_true)
 
-        # Detectam spike-uri (ca inainte)
+        #detectam spike-uri
         spike_mask = (torch.abs(y_true - y_pred) > self.threshold).float()
         spike_loss = (spike_mask * torch.abs(y_true - y_pred)).mean()
 
-        # Accent special pe eroarea din prima ora (index 0)
+        #accent special pe eroarea din prima ora (index 0)
         primary_hour_error = torch.abs(y_true[:, 0] - y_pred[:, 0]).mean()
 
-        # Total loss = pierdere generala + spike-uri + penalizare pe prima ora
+        #total loss = pierdere generala + spike-uri + penalizare pe prima ora
         return base_loss + alpha * spike_loss + beta * primary_hour_error
 
     def remove_highly_correlated_features(self, data, features, threshold=0.95):
@@ -104,7 +102,7 @@ class KANAnalyzer:
         return data, features
 
     def preprocess_data(self):
-        # Citirea datelor
+        #citirea datelor
         data = pd.read_csv(self.csv_path)
         data['timestamp'] = pd.to_datetime(data['timestamp'])
         data.set_index('timestamp', inplace=True)
@@ -116,13 +114,12 @@ class KANAnalyzer:
         data['month'] = data.index.month
         data['season'] = data['month'] % 12 // 3
 
-        # Creare caracteristici suplimentare
         data["hour_sin"] = np.sin(2 * np.pi * data["hour_of_day"] / 24)
         data["hour_cos"] = np.cos(2 * np.pi * data["hour_of_day"] / 24)
         data["day_sin"] = np.sin(2 * np.pi * data["day_of_week"] / 7)
         data["day_cos"] = np.cos(2 * np.pi * data["day_of_week"] / 7)
 
-        # Aplicare lag-uri
+        #aplicare lag-uri
         lags = [1, 2, 3, 6, 12, 24, 48, 72, 168, 336, 672]
         for lag in lags:
             data[f'lag_{lag}h'] = data['power'].shift(lag)
@@ -143,7 +140,7 @@ class KANAnalyzer:
         data['grad_3h'] = data['power'].rolling(3).apply(lambda x: x.iloc[-1] - x.iloc[0])
         data['grad_6h'] = data['power'].rolling(6).apply(lambda x: x.iloc[-1] - x.iloc[0])
 
-        # Creare caracteristici temporale avansate
+        #creare caracteristici temporale avansate
         data['delta_power'] = data['power'].diff().shift(1)
         data['rolling_mean_12h'] = data['power'].rolling('12h').mean().shift(1)
         data['rolling_std_12h'] = data['power'].rolling('12h').std().shift(1)
@@ -156,7 +153,7 @@ class KANAnalyzer:
 
         data["power_diff_24h"] = data["power"] - data["power"].shift(24)
 
-        # Threshold auto pe baza std dev
+        #threshold auto pe baza std dev
         diff_std = data['power_diff_24h'].std()
         self.spike_event_threshold = 5 * diff_std
 
@@ -169,10 +166,10 @@ class KANAnalyzer:
         data['acf_1h'] = data['power'].rolling(24).apply(
             lambda x: acf(x, nlags=1, fft=True)[1] if len(x.dropna()) == 24 else 0)
 
-        # Umplem valorile lipsa
+        #umplem valorile lipsa
         data = data.interpolate(method='linear', limit_direction='both')
 
-        # Prag general adaptiv
+        #prag general adaptiv
         threshold = np.percentile(data['power'], 90)
         data['is_on'] = (data['power'] > threshold).astype(int)
         data['event_on'] = ((data['is_on'] == 1) & (data['is_on'].shift(1) == 0)).astype(int)
@@ -185,7 +182,7 @@ class KANAnalyzer:
         val_data = data.iloc[train_size:train_size + val_size]
         test_data = data.iloc[train_size + val_size:]
 
-        # Selectam caracteristicile pentru scalare
+        #selectam caracteristicile pentru scalare
         self.selected_features = ['power', 'day_of_week', 'hour_of_day', 'is_weekend', 'month', 'season',
                                   'hour_sin', 'hour_cos', 'day_sin', 'day_cos', 'lag_1h', 'lag_2h',
                                   'lag_3h', 'lag_6h', 'lag_12h', 'lag_24h', 'lag_48h', 'lag_72h', 'lag_168h',
@@ -201,14 +198,14 @@ class KANAnalyzer:
 
         # data, self.selected_features = self.remove_highly_correlated_features(data, self.selected_features)
 
-        # Aplicam scalarea DOAR pe setul de train pt. a evita data leakage
+        #aplicam scalarea DOAR pe setul de train pt a evita data leakage
         self.scaler = MinMaxScaler(feature_range=(0, 10))
         self.scaler.fit(train_data[self.selected_features])
 
         self.scaler_y = MinMaxScaler(feature_range=(0, 10))
         self.scaler_y.fit(train_data[['power']])
 
-        # Transformam fiecare subset folosind scaler-ul antrenat pe train
+        #transformam fiecare subset folosind scaler-ul antrenat pe train
         train_scaled = self.scaler.transform(train_data[self.selected_features])
         val_scaled = self.scaler.transform(val_data[self.selected_features])
         test_scaled = self.scaler.transform(test_data[self.selected_features])
@@ -217,7 +214,7 @@ class KANAnalyzer:
         X_val, y_val = self.create_sequences(val_scaled)
         X_test, y_test = self.create_sequences(test_scaled)
 
-        # Creăm DataLoaders
+        #cream DataLoaders
         self.train_loader = DataLoader(TimeSeriesDataset(X_train, y_train), batch_size=self.batch_size, shuffle=True)
         self.val_loader = DataLoader(TimeSeriesDataset(X_val, y_val), batch_size=self.batch_size, shuffle=False)
         self.test_loader = DataLoader(TimeSeriesDataset(X_test, y_test), batch_size=self.batch_size, shuffle=False)
@@ -308,7 +305,7 @@ class KANAnalyzer:
 
             current_lr = self.optimizer.param_groups[0]['lr']
             print(
-                f"Epoch {epoch + 1}/{epochs}, Train Loss: {train_losses[-1]:.4f}, Val Loss: {val_losses[-1]:.4f}, LR: {current_lr:.6f}")
+                f"epoch {epoch + 1}/{epochs}, Train Loss: {train_losses[-1]:.4f}, Val Loss: {val_losses[-1]:.4f}, LR: {current_lr:.6f}")
 
             if val_losses[-1] < best_val_loss:
                 if model_path is not None:
@@ -318,24 +315,21 @@ class KANAnalyzer:
                     model_save_path = "saved_lstm_model.pth"
 
                 torch.save(self.model.state_dict(), model_save_path)
-                print(f" Model salvat la: {model_save_path} (epoch {epoch + 1}) cu val_loss: {val_losses[-1]:.4f}")
+                print(f"model salvat la: {model_save_path} (epoch {epoch + 1}) cu val_loss: {val_losses[-1]:.4f}")
                 best_val_loss = val_losses[-1]
                 patience_counter = 0
             else:
                 patience_counter += 1
 
             if patience_counter >= patience:
-                print(f" Early stopping activat! Antrenarea se opreste la epoch {epoch + 1}.")
+                print(f"early stopping activat! Antrenarea se opreste la epoca {epoch + 1}.")
                 break
 
             self.scheduler.step(val_losses[-1])
 
-        # End timer
         end_time = time.time()
         training_duration = end_time - start_time
-        print(f"\n Timp total pentru antrenare canal {self.channel_number}: {training_duration:.2f} secunde")
 
-        # Salvare timp intr-un CSV global
         timing_data = pd.DataFrame([{
             "channel_number": self.channel_number,
             "training_time_seconds": training_duration
@@ -361,9 +355,8 @@ class KANAnalyzer:
                 X_batch = X_batch.to(self.device).float()
                 y_batch = y_batch.to(self.device)
 
-                # Predictii
-                y_pred = self.model(X_batch).cpu().numpy()  # (batch, 24)
-                y_batch = y_batch.cpu().numpy()  # (batch, 24)
+                y_pred = self.model(X_batch).cpu().numpy()
+                y_batch = y_batch.cpu().numpy()
 
                 for i in range(len(y_pred)):
                     pred_fill = np.zeros((24, len(self.selected_features)))
@@ -380,8 +373,8 @@ class KANAnalyzer:
 
                     row = {
                         "timestamp": timestamp,
-                        "prediction": y_pred_inv[0],  # prima ora
-                        "actual": y_actual_inv[0]  # prima ora
+                        "prediction": y_pred_inv[0],
+                        "actual": y_actual_inv[0]
                     }
 
                     rows.append(row)

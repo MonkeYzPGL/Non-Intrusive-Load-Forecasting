@@ -5,7 +5,6 @@ import seaborn as sns
 from statsmodels.graphics.tsaplots import plot_acf
 from statsmodels.tsa.seasonal import seasonal_decompose
 
-
 def load_labels(labels_file):
     labels = {}
     with open(labels_file, 'r') as f:
@@ -29,9 +28,6 @@ def generate_histogram(channel_id, csv_dir, output_dir, labels_file):
     label_name = labels.get(channel_id, channel_name)
 
     df = pd.read_csv(csv_path)
-
-    if 'power' not in df.columns:
-        raise ValueError("Coloana 'power' lipseste din CSV.")
 
     plt.figure(figsize=(10, 6))
     plt.hist(df['power'].dropna(), bins=50, alpha=0.7, color='skyblue')
@@ -66,7 +62,7 @@ def decomposition_plot(input_path, output_dir, channel_name):
     fig.savefig(output_path)
     plt.close(fig)
 
-    print(f" Decomposition plot salvat: {output_path}")
+    print(f"decomposition plot salvat: {output_path}")
     return output_path
 
 def generate_correlogram(csv_dir, output_path, labels_file):
@@ -87,7 +83,7 @@ def generate_correlogram(csv_dir, output_path, labels_file):
                 print(f"Eroare la {file}: {str(e)}")
 
     if combined_data.empty:
-        raise ValueError("Nu s-au incarcat date valide.")
+        raise ValueError("nu s-au incarcat date valide.")
 
     plt.figure(figsize=(14, 12))
     sns.heatmap(combined_data.corr(), annot=True, fmt=".2f", cmap="coolwarm", linewidths=0.5)
@@ -98,13 +94,13 @@ def generate_correlogram(csv_dir, output_path, labels_file):
     plt.savefig(output_path)
     plt.close()
 
-    print(f"Corelograma salvata in: {output_path}")
+    print(f"corelograma salvata in: {output_path}")
     return output_path
 
 def generate_acf_plot(channel_id, csv_dir, output_dir, label_path, lags=168):
     csv_file = os.path.join(csv_dir, f"channel_{channel_id}_downsampled_1H.csv")
     if not os.path.exists(csv_file):
-        raise FileNotFoundError(f"Fisierul {csv_file} nu exista.")
+        raise FileNotFoundError(f"fisierul {csv_file} nu exista.")
 
     labels = {}
     with open(label_path, 'r') as f:
@@ -167,10 +163,10 @@ def metrics_channels(input_dir, output_dir):
                 output_file = os.path.join(output_dir, f"{channel_name}_details.csv")
                 pd.DataFrame([stats]).to_csv(output_file, index=False)
 
-                print(f"Detalii salvate: {output_file}")
+                print(f"detalii salvate: {output_file}")
 
             except Exception as e:
-                print(f"Eroare la {file}: {str(e)}")
+                print(f"eroare la {file}: {str(e)}")
 
 def get_consumption_for_day(channel_id, csv_dir, date_str, labels_file):
     import pandas as pd
