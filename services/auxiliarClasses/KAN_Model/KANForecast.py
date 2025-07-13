@@ -91,7 +91,7 @@ class KANForecaster:
         return df
 
     def load_model_and_scalers(self):
-        # Incarca scalere
+        #incarcam scalere
         self.scaler_X_path = os.path.join(self.scaler_dir, f"channel_{self.channel_number}_X_scaler.pkl")
         self.scaler_y_path = os.path.join(self.scaler_dir, f"channel_{self.channel_number}_y_scaler.pkl")
         if not os.path.exists(self.scaler_X_path) or not os.path.exists(self.scaler_y_path):
@@ -100,7 +100,7 @@ class KANForecaster:
         self.scaler_X = joblib.load(self.scaler_X_path)
         self.scaler_y = joblib.load(self.scaler_y_path)
 
-        # Incarca modelul
+        #incarca modelul
         input_size = self.window_size * len(self.selected_features)
         self.model = KAN(layers_hidden=[input_size, self.hidden_size, 24])
         self.model.load_state_dict(torch.load(self.model_path, map_location=self.device))

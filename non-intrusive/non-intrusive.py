@@ -70,7 +70,7 @@ if __name__ == "__main__":
     #incarcam si filtram datele
     df_combined = load_and_filter_channels(DOWNSAMPLED_DIR, common_start, common_end)
 
-    #salvam csv-ul cu datele sincronizate in folderul NILM
+    #salvam csv-ul cu datele sincronizate
     csv_path = os.path.join(nilm_dir, "nilm_dataset.csv")
     df_combined.to_csv(csv_path)
     print(f"dataset sincronizat salvat la: {csv_path}")
@@ -82,5 +82,5 @@ if __name__ == "__main__":
     np.save(os.path.join(nilm_dir, "Y_appliances.npy"), Y)
 
     print(f"shape X: {X.shape} | shape Y: {Y.shape}")
-    print(f"canale prezente (Y): {appliance_cols}")
+    print(f"channel-uri prezente (Y): {appliance_cols}")
 

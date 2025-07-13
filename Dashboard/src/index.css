@@ -1,0 +1,28 @@
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Segoe UI', 'Roboto', 'Arial', sans-serif;
+  background: #181f2a;
+  color: #e0e6f3;
+}
+
+#root {
+  width: 100%;
+  min-height: 100vh;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  background: #232b3e;
+}
+::-webkit-scrollbar-thumb {
+  background: #2d3650;
+  border-radius: 4px;
+}
+body.react-select-open {
+  overflow: hidden;
+}

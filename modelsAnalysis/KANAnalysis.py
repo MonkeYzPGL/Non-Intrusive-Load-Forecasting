@@ -23,7 +23,6 @@ class TimeSeriesDataset(Dataset):
     def __getitem__(self, idx):
         return self.X[idx], self.y[idx]
 
-
 class KANAnalyzer:
     timing_csv = "training_timing_kan.csv"
     def __init__(self, csv_path, window_size=168, hidden_size=512, batch_size=64, learning_rate=0.001, channel_number = 0, scaler_dir = None,):
@@ -232,7 +231,7 @@ class KANAnalyzer:
         if self.scaler_path_X is not None and self.scaler_path_y is not None:
             joblib.dump(self.scaler, self.scaler_path_X)
             joblib.dump(self.scaler_y, self.scaler_path_y)
-            print(f" Scalere salvate pentru channel_{self.channel_number}: {self.scaler_path_X}, {self.scaler_path_y}")
+            print(f"scalere salvate pentru channel_{self.channel_number}: {self.scaler_path_X}, {self.scaler_path_y}")
 
     def create_sequences(self, data, horizon=24):
         X, y = [], []
@@ -276,7 +275,7 @@ class KANAnalyzer:
         clf = RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=9)
         clf.fit(clf_features, clf_labels)
         joblib.dump(clf, self.classifier_path)
-        print(f" Clasificator salvat la: {self.classifier_path}")
+        print(f"clasificator salvat la: {self.classifier_path}")
 
         for epoch in range(epochs):
             self.model.train()

@@ -81,7 +81,6 @@ if __name__ == "__main__":
 
     """FORECAST KAN"""
 
-    # === Config de baza ===
     target_day = "2014-12-4"
     window_size = 168
 
@@ -95,11 +94,10 @@ if __name__ == "__main__":
         "metrics_KAN": os.path.join(target_folder, "metrics", "KAN")
     }
 
-    #creaza toate folderele necesare
     for path in subdirs.values():
         os.makedirs(path, exist_ok=True)
 
-    #sisiere output
+    #fisiere output
     kan_combinat_dir = os.path.join(subdirs["combinat"], "KAN")
     os.makedirs(kan_combinat_dir, exist_ok=True)
     output_csv = os.path.join(kan_combinat_dir, "forecast_total_kan.csv")
@@ -155,7 +153,7 @@ if __name__ == "__main__":
                 output_path=metrics_path_channel
             )
             analyzer.save_metrics()
-            print(f" Metrici salvate pentru {channel_name}: {metrics_path_channel}")
+            print(f"metrici salvate pentru {channel_name}: {metrics_path_channel}")
 
             #salvare grafic individual
             plt.figure(figsize=(10, 4))
@@ -173,10 +171,10 @@ if __name__ == "__main__":
             plt.savefig(plot_path)
             plt.close()
 
-            print(f" Salvat pentru {channel_name}")
+            print(f"salvat pentru {channel_name}")
 
         except Exception as e:
-            print(f"️ Eroare la {channel_name}: {str(e)}")
+            print(f"️eroare la {channel_name}: {str(e)}")
             traceback.print_exc()
 
     combined_df["total_predicted"] = sum(total_pred)
@@ -193,9 +191,9 @@ if __name__ == "__main__":
         output_path=metrics_total_path
     )
     analyzer_total.save_metrics()
-    print(f" Metrici totale KAN salvate: {metrics_total_path}")
+    print(f"metrici totale KAN salvate: {metrics_total_path}")
 
-    #frafic total
+    #grafic total
     plt.figure(figsize=(12, 5))
     plt.plot(combined_df["timestamp"], combined_df["total_actual"], label="Total Actual", color="red")
     plt.plot(combined_df["timestamp"], combined_df["total_predicted"], label="Total Predicted", color="blue")

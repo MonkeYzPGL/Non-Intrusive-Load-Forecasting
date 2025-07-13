@@ -45,7 +45,7 @@ if __name__ == "__main__":
              df_results = lstm_analyzer.predict()
 
              df_results.to_csv(lstm_prediction_path, index=False)
-             print(f" Predictii salvate: {lstm_prediction_path}")
+             print(f"predictii salvate: {lstm_prediction_path}")
 
              metrics_analyzer = ErrorMetricsAnalyzer(
                  predictions=df_results["prediction"].values,
@@ -54,9 +54,8 @@ if __name__ == "__main__":
              )
              metrics_analyzer.save_metrics()
 
-             print(f" Metrici salvate: {lstm_metrics_path}")
+             print(f"metrici salvate: {lstm_metrics_path}")
 
-             # Salvare plot
              plt.figure(figsize=(20, 6))
              plt.plot(df_results["timestamp"], df_results["actual"], label="Actual", linewidth=1.5)
              plt.plot(df_results["timestamp"], df_results["prediction"], label="Predicted", linewidth=1.5)
@@ -69,13 +68,13 @@ if __name__ == "__main__":
              plt.savefig(plot_save_path)
              plt.close()
 
-             print(f" Plot salvat: {plot_save_path}")
+             print(f"plot salvat: {plot_save_path}")
 
          except Exception as e:
-             print(f" Eroare la {channel_name}: {str(e)}")
+             print(f"eroare la {channel_name}: {str(e)}")
 
     """FORECAST LSTM"""
-    #=== Config de baza ===
+
     target_day = "2014-11-1"
     window_size = 168
 
@@ -146,7 +145,7 @@ if __name__ == "__main__":
                 output_path=metrics_path_channel
             )
             analyzer.save_metrics()
-            print(f" Metrici salvate pentru {channel_name}: {metrics_path_channel}")
+            print(f"metrici salvate pentru {channel_name}: {metrics_path_channel}")
 
             plt.figure(figsize=(10, 4))
             plt.plot(df_forecast["timestamp"], df_forecast["actual_power"], label="Actual", color="red")

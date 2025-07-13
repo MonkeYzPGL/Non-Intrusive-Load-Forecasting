@@ -28,7 +28,7 @@ class AggregationAnalyzer:
         for channel, data in aggregated_data.items():
             output_path = os.path.join(output_dir, f"{channel.replace('.dat', '')}_aggregated_{freq}.csv")
             data.to_csv(output_path)
-            print(f"Aggregated data saved to {output_path}")
+            print(f"Datele agregate salvate la {output_path}")
 
     def save_downsampled_data(self, freq, output_dir):
 
@@ -37,7 +37,7 @@ class AggregationAnalyzer:
             data.fillna(0, inplace=True)
             output_path = os.path.join(output_dir, f"{channel.replace('.dat', '')}_downsampled_{freq}.csv")
             data.to_csv(output_path)
-            print(f"Downsampled data saved to {output_path}")
+            print(f"Datele downsampled salvate la {output_path}")
 
     def generate_aggregated(self, input_folder):
 

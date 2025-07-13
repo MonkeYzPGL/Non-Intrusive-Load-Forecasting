@@ -135,8 +135,6 @@ class NILMTrainer:
 
         return y_preds, y_trues
 
-    import os
-
     def evaluate_all_appliances(self, predictions_dir, save_csv_path):
         results = []
         metrics_folder = os.path.join(predictions_dir, "metrics")
@@ -185,7 +183,6 @@ class NILMTrainer:
                 true = y_trues[sample_id, :, i]
                 time = timestamps_all[sample_id]
 
-                # Actual cu albastru, Prediction cu portocaliu
                 plt.plot(time, true, color='tab:blue', linewidth=2, label="Actual" if sample_id == 0 else "")
                 plt.plot(time, pred, color='tab:orange', linestyle='--', label="Predicted" if sample_id == 0 else "")
 
@@ -223,7 +220,6 @@ def create_nilm_sequences( csv_path, window_size=168):
         df['rolling_std_24h'] = df['channel_1'].rolling(window=24).std()
         df['rolling_max_24h'] = df['channel_1'].rolling(window=24).max()
 
-        #eliminam valorile lipsa
         df = df.dropna()
 
         #separam X si Y
@@ -258,7 +254,7 @@ def create_nilm_sequences( csv_path, window_size=168):
 
 if __name__ == "__main__":
     nilm_dir = "C:\\Users\\elecf\\Desktop\\Licenta\\Date\\UK-DALE-disaggregated\\house_1\\downsampled\\1H\\NILM"
-    csv_dataset_path = os.path.join(nilm_dir, "nilm_dataset.csv")  # CSV cu canale sincronizate
+    csv_dataset_path = os.path.join(nilm_dir, "nilm_dataset.csv")  #csv cu channel-urile sincronizate
 
     X, Y, appliance_cols, timestamps = create_nilm_sequences(csv_dataset_path, window_size=168)
     np.save(os.path.join(nilm_dir, "timestamps.npy"), timestamps)
@@ -292,7 +288,6 @@ if __name__ == "__main__":
 
     appliance_cols = [f"channel_{i}" for i in range(2, 2 + num_appliances)]
 
-    # predictie + salvare CSV
     y_preds, y_trues = trainer.predict(
         appliance_cols=appliance_cols,
         save_dir=csv_dir
