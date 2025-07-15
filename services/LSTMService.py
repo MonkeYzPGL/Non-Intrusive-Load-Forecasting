@@ -1,4 +1,6 @@
 import matplotlib.pyplot as plt
+import numpy as np
+
 from services.auxiliarClasses.LSTM_Model.LSTMForecast import LSTMForecaster
 import os
 import pandas as pd
@@ -36,6 +38,8 @@ def run_total_forecast_for_day_lstm(target_day, base_dir):
 
     combined_df = pd.DataFrame({'timestamp': timestamps})
     total_pred = []
+    canale_valide = []
+    total_pred = []
 
     for i in range(2, 54):
         try:
@@ -53,13 +57,17 @@ def run_total_forecast_for_day_lstm(target_day, base_dir):
 
             df_forecast = forecaster.rolling_forecast_day(target_day)
 
+            #ignora channel-urile incomplete
+            if df_forecast.shape[0] != 24:
+                print(f"{channel_name} are doar {df_forecast.shape[0]} ore, ignorat.")
+                continue
+
             combined_df[f"{channel_name}_predicted"] = df_forecast["predicted_power"]
             total_pred.append(df_forecast["predicted_power"].values)
 
             channel_output_csv = os.path.join(output_channel_csv_LSTM, f"forecast_{channel_name}.csv")
             df_forecast.to_csv(channel_output_csv, index=False)
 
-            # Optional: plot + save
             plot_path = os.path.join(plots_output_LSTM, f"plot_{channel_name}.png")
             plt.figure(figsize=(10, 4))
             plt.plot(df_forecast["timestamp"], df_forecast["actual_power"], label="Actual", color="red")
@@ -74,10 +82,9 @@ def run_total_forecast_for_day_lstm(target_day, base_dir):
         except Exception as e:
             print(f"Eroare la {channel_name}: {e}")
 
-    combined_df["total_predicted"] = sum(total_pred)
+    combined_df["total_predicted"] = np.sum(total_pred, axis=0)
     combined_df["total_actual"] = actual_total.values
     combined_df.to_csv(output_csv, index=False)
-
 
 def run_forecast_for_single_channel_lstm(target_day, channel_id, base_dir):
 

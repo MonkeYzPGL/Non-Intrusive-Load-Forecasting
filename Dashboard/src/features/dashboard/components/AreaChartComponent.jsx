@@ -104,15 +104,15 @@ export default function AreaChartComponent({ showLSTM, showActual, setShowLSTM, 
         }
 
         const parsedData = baselineRaw.map(row => {
-        const iso = new Date(row.timestamp).toISOString();
-        return {
-          timestamp: row.timestamp,
-          actual: row.actual || row.power || null,
-          baseline: row.prediction || null,
-          LSTM: LSTMMap[iso] ?? null,
-          KAN: KANMap[iso] ?? null
-        };
-      })
+          const iso = new Date(row.timestamp).toISOString();
+          return {
+            timestamp: row.timestamp,
+            actual: row.actual ?? row.power ?? null,
+            baseline: row.prediction ?? null,
+            LSTM: LSTMMap[iso] ?? null,
+            KAN: KANMap[iso] ?? null
+          };
+        });
 
         const filtered = selectedDate && selectedDate !== 'All'
           ? parsedData.filter(row =>

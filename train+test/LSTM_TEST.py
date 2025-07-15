@@ -75,7 +75,7 @@ if __name__ == "__main__":
 
     """FORECAST LSTM"""
 
-    target_day = "2014-11-1"
+    target_day = "2014-12-24"
     window_size = 168
 
     base_output_path = r"C:\Users\elecf\Desktop\Licenta\Date\UK-DALE-disaggregated\house_1\predictii_viitor"
